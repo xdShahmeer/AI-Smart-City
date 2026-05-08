@@ -48,10 +48,15 @@ No external libraries beyond these. Everything above is either built into Python
 
 ## Code Style Rules
 
-- **Naming:** camelCase for all variables and functions. PascalCase for class names. Example: `cityGraph`, `getNeighbours`, `CityNode`.
+- **Naming:** camelCase for all variables and functions, the camelCase should not exceed twoWords and should have actual meaning. PascalCase for class names. Example: `cityGraph`, `getNeighbours`, `CityNode`.
 - **Comments:** Short, humanised, only where the logic is non-obvious. No block comment walls. No em dashes in comments.
 - **No over-engineering:** Keep each function doing one clear thing. No abstract base classes or design patterns unless they simplify the code.
 - **Beginner readable:** If a first-year CS student cannot follow the logic within 30 seconds of reading a function, it needs to be simplified.
+- **Code Readibility**: If the code gets congested, add spaces in between the lines of code so its easy to follow along.
+- **Do not add brackets**: Do not add random brackets throughout the code like (Hello) world
+- **Output Decoration**: Do not add any output decoration like =====, ----. Unless designing the menu. 
+- **Maintain Excellent OOP**: Throughout the code, the code should have a well structured object oriented code base, no random functions being created for the sake of one functionality to be processed. 
+- **Do not excessively spam libraries**: Keep the libraries that are being used restricted to libraries that are actually needed, all work can be done in existing libraries unless really required, so just a heads up keep the amount of libraries restricted to what we actually need. 
 
 ---
 
