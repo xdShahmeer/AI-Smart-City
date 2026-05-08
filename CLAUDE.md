@@ -503,10 +503,109 @@ On a 4-directional grid, Manhattan distance is the exact minimum number of steps
 
 ---
 
-## What to Implement Later (Not Now)
+## Implementation Status
 
-- Actual sprite assets (placeholders first, swap in later)
-- UI polish and creative visual theme (to be designed as a group — this directly affects the interface and presentation score)
-- Any extra simulation features beyond the 20-step loop
+All core Python files have been written. Below is a record of what each file contains, so peers and the group can verify correctness manually.
+
+### `cityGraph.py`
+- `CityGraph(rows, cols)` — initialises all nodes as Empty with riskIndex=1.0, builds full 4-directional edge grid
+- Edge costs: 0.8 if either endpoint is Residential, else 1.0. Updated via `setNodeType`.
+- `edgeKey(nodeA, nodeB)` — module-level canonical key function (smaller node first)
+- All public methods match spec: `setNodeType`, `getNeighbours`, `getAccessibleNeighbours`, `getEdgeCost`, `getWeightedCost`, `floodEdge`, `unfloodEdge`, `isEdgeBlocked`, `setRiskIndex`, `setAccessible`, `getAllNodes`, `getAccessibleNodes`, `getNodesByType`, `getAllEdges`, `reset`
+
+### `csp.py`
+- `runCSP(graph, buildingCounts)` — public entry point, returns `(True, None)` or `(False, conflictInfo)`
+- Uses backtracking with MRV (`pickMRV`), LCV (`lcvOrder`), and forward checking (`forwardCheck`)
+- Constraint 1 (Industrial adjacency) checked during search via `getValidCells`
+- Constraints 2 and 3 (proximity) checked only at the leaf of the backtracking tree via `validateProximity`
+- Minimum conflict fallback: if backtracking fails, runs `greedyPlace` then `identifyWorstConstraint`
+- BFS uses `graph.getNeighbours` (not accessible version — layout phase ignores flooding)
+
+### `mst.py`
+- `buildRoadNetwork(graph)` — public entry point, returns `(routeA, routeB)` as lists of canonical edge tuples
+- `pickCentreNode` — designates Primary Hospital and Primary Depot (closest to grid centre, tiebreaker row then col)
+- `buildMST` — Kruskal's with Union-Find (path compression + union by rank), stops at numNodes-1 edges
+- `astarPath` — local A* for route finding, uses Manhattan distance, respects `graph.isEdgeBlocked`
+- Route A edges are blocked via `graph.floodEdge()` before Route B search, then restored via `graph.unfloodEdge()`
+
+### `crime.py`
+- `runCrime(graph)` — public entry point, writes riskIndex to every node via `graph.setRiskIndex`
+- `getProximityToIndustrial` — BFS hop count to nearest Industrial, fallback = rows+cols if none exists
+- Stage 1: KMeans(n_clusters=3, random_state=42, n_init=10). Cluster labelled by population density rank.
+- Stage 2: synthetic labels via `score = (pop*0.6) + ((1/(prox+1))*0.4)`, normalised, thresholds 0.66/0.33
+- Stage 3: KNeighborsClassifier(n_neighbors=5), trained on all nodes, predicts for all nodes
+- riskIndex map: High=2.5, Medium=1.75, Low=1.25
+
+### `ga.py`
+- `runGA(graph)` — public entry point, writes and returns `graph.ambulancePositions`
+- `dijkstra(graph, source)` — returns distance dict using `getWeightedCost` and `getAccessibleNeighbours`
+- Fitness = max(min distance from any node to nearest ambulance) — Dijkstra-based, not BFS
+- Population=50, Generations=100, Mutation rate=10%, Elitism keeps top 25
+- `fixDuplicates` — replaces duplicate nodes using a pre-collected full position set (not just seen-so-far)
+- GA runs once before simulation, does NOT re-run during steps
+
+### `astar.py`
+- `findPath(graph, start, goal)` — A* with Manhattan heuristic, uses `getWeightedCost`, returns node list or []
+- `RouterState` class: `currentPos`, `civilians` (5 random accessible nodes), `currentPath`, `currentTarget`, `skipped`, `reached`
+- `initRouter(graph)` — team starts at `graph.primaryHospital`, returns RouterState
+- `stepRouter(state, graph, eventLog)` — moves one cell per call, rerouts on blockage, skips unreachable civilians
+- Event strings: `"Civilian at X is unreachable -- all paths flooded. Skipping."`, `"Medical team rerouted. New path length: N hops."`, `"Medical team reached civilian at X."`
+
+### `simulation.py`
+- `Simulation(graph, buildingCounts, floodProbability=0.30)` class
+- `setup()` — runs CSP → MST → crime → GA → A* in order, returns `(cspSuccess, cspConflict)`
+- `step()` — flood check (30% random edge) → advance medical team → ambulance accessibility check. Returns list of event strings.
+- `autoRun(onStepCallback)` — runs all remaining steps
+- Ambulance relocation: if node inaccessible, greedy-move to first accessible neighbour
+
+### `eventLog.py`
+- `EventLog(parent)` class — Tkinter Text widget with scrollbar
+- Dark terminal theme: bg=#1e1e1e, fg=#00ff88, Courier font size 9
+- `addEntry(text)` — appends line, auto-scrolls to END
+- `clear()` — clears all entries
+- `addSeparator()` — inserts `"---" * 20` divider line
+
+### `ui.py`
+- `AppUI(graph, simulation)` — no eventLog parameter; creates its own `EventLog` during `setup()`
+- Pygame window: CELL_SIZE=60, MARGIN=4, deep navy background, coloured rects per building type
+- Tkinter window: settings panel (grid size, 6 building counts, flood prob slider, step delay slider), Start/Reset/Step/Play-Pause buttons, 3 overlay toggles, node info panel, event log
+- Three overlays: `"roads"` (colour-coded roads), `"coverage"` (BFS distance blue heatmap), `"crime"` (riskIndex colour)
+- `onStartSimulation`, `onReset`, `onStep` are placeholder lambdas replaced by `main.py`
+
+### `main.py`
+- Thin entry point: creates `CityGraph`, `Simulation`, `AppUI`, wires callbacks, runs 30 FPS main loop
+- Callbacks defined as nested functions inside `main()` — no globals needed
+- Auto-play calls `sim.step()` each iteration with configured step delay
+- `pygame.quit()` called on exit
+
+---
+
+## Sprites — Status and Source
+
+Sprites are not yet integrated. Placeholder coloured rectangles are used for all building types. When ready, use **Kenney's Tiny Town** pack (CC0, free, top-down):
+- URL: [kenney.nl/assets/tiny-town](https://kenney.nl/assets/tiny-town)
+- All assets are CC0 — no attribution required, commercial use allowed
+- Place downloaded PNG files in the `assets/` folder
+- In `ui.py`, load sprites in `_setupPygame()` using `pygame.image.load()` and scale to `(CELL_SIZE - MARGIN*2, CELL_SIZE - MARGIN*2)`
+- Replace the coloured rect drawing in `_drawNodes()` with `screen.blit(sprite, rect)` per building type
+
+Building type to sprite filename mapping (to be confirmed once pack is downloaded):
+- Residential → house sprite
+- Hospital → hospital/medical sprite
+- School → school sprite
+- Industrial → factory sprite
+- PowerPlant → power tower sprite
+- AmbulanceDepot → garage/depot sprite
+- Ambulance → ambulance vehicle sprite (for `_drawAmbulances`)
+
+---
+
+## What to Do Next
+
+1. Download Kenney Tiny Town sprites and place in `assets/`
+2. Wire sprites into `ui.py` `_drawNodes()` and `_drawAmbulances()`
+3. Run the system end-to-end and fix any integration bugs
+4. Polish UI creative theme (colours, fonts, layout spacing)
+5. Test all 5 AI modules working together in the 20-step simulation
 
 ---
