@@ -7,11 +7,20 @@ import ga
 import astar
 
 
+# Hard cap on extra steps the simulation may run past totalSteps to finish off
+# any civilians that are still pending. Without this, an unreachable chain of
+# events could let the loop run indefinitely.
+MAX_EXTRA_STEPS = 30
+
+
 class Simulation:
-    def __init__(self, graph, buildingCounts, floodProbability=0.30):
+    def __init__(self, graph, buildingCounts, floodProbability=0.30,
+                 residentialHops=3, powerplantHops=2):
         self.graph            = graph
         self.buildingCounts   = buildingCounts
         self.floodProbability = floodProbability
+        self.residentialHops  = residentialHops
+        self.powerplantHops   = powerplantHops
         self.totalSteps       = 20
         self.currentStep      = 0
         self.routerState      = None  # created by initRouter during setup
@@ -22,13 +31,34 @@ class Simulation:
         self.cspSuccess       = False
         self.cspConflict      = None
 
+    def rebuild(self, graph, buildingCounts, floodProbability,
+                residentialHops=3, powerplantHops=2):
+        # Re-bind to a fresh graph and clear all simulation-specific state.
+        # Used by the controller when starting or resetting a simulation.
+        self.graph            = graph
+        self.buildingCounts   = buildingCounts
+        self.floodProbability = floodProbability
+        self.residentialHops  = residentialHops
+        self.powerplantHops   = powerplantHops
+        self.totalSteps       = 20
+        self.currentStep      = 0
+        self.routerState      = None
+        self.routeA           = []
+        self.routeB           = []
+        self.floodedEdges     = []
+        self.setupDone        = False
+        self.cspSuccess       = False
+        self.cspConflict      = None
+
     def setup(self):
         # Run all pre-simulation modules in the required order.
         # Returns (cspSuccess, cspConflict).
 
-        # 1. Place buildings via CSP
+        # 1. Place buildings via CSP, with the live-modifiable proximity hops
         self.cspSuccess, self.cspConflict = csp.runCSP(
-            self.graph, self.buildingCounts
+            self.graph, self.buildingCounts,
+            residentialHops=self.residentialHops,
+            powerplantHops=self.powerplantHops,
         )
 
         # 2. Build road network and designate primary hospital/depot
@@ -49,8 +79,9 @@ class Simulation:
     def step(self):
         # Advance the simulation by one step.
         # Returns a list of event strings generated this step.
+        # Hard-stops once we go past the 20-step budget plus the extra-step cap.
 
-        if self.currentStep >= self.totalSteps:
+        if self.currentStep >= self.totalSteps + MAX_EXTRA_STEPS:
             return []
 
         self.currentStep += 1
@@ -113,9 +144,25 @@ class Simulation:
             if onStepCallback:
                 onStepCallback(self.currentStep, events)
 
+    # ------------------------------------------------------------------ #
+    #  Getters                                                             #
+    # ------------------------------------------------------------------ #
+
     def isFinished(self):
-        # True once all 20 steps have been completed.
-        return self.currentStep >= self.totalSteps
+        # Within the 20-step budget the sim is never finished.
+        if self.currentStep < self.totalSteps:
+            return False
+
+        # Past the budget: stay alive while the team still has civilians
+        # to handle (manual or initial unreached). Capped at MAX_EXTRA_STEPS
+        # so an unreachable cycle cannot block forever -- stepRouter already
+        # marks unreachable civilians as skipped on the next step.
+        if self.routerState is not None:
+            pending = len(self.routerState.civilians) - self.routerState.currentTarget
+            if pending > 0 and self.currentStep < self.totalSteps + MAX_EXTRA_STEPS:
+                return False
+
+        return True
 
     def getSummary(self):
         # Returns a short end-of-simulation report string.
@@ -125,7 +172,7 @@ class Simulation:
         cspResult = "Success" if self.cspSuccess else "Minimum conflict layout used"
 
         return (
-            f"Simulation complete after {self.totalSteps} steps.\n"
+            f"Simulation complete after {self.currentStep} steps.\n"
             f"Civilians reached: {reached}\n"
             f"Civilians skipped: {skipped}\n"
             f"Roads flooded: {len(self.floodedEdges)}\n"

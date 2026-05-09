@@ -7,12 +7,12 @@ class EventLog:
         headerLabel = tk.Label(
             parent,
             text="Event Log",
-            fg="white",
-            bg="#2b2b2b",
-            font=("Courier", 10, "bold"),
+            fg="#e8e8f4",
+            bg="#252540",
+            font=("Segoe UI Semibold", 10),
             anchor="w",
-            padx=6,
-            pady=4
+            padx=8,
+            pady=5
         )
         headerLabel.pack(side=tk.TOP, fill=tk.X)
 
@@ -23,18 +23,21 @@ class EventLog:
         scrollbar = tk.Scrollbar(logFrame, orient=tk.VERTICAL)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # height=1 lets the pack manager determine the actual height -- otherwise
+        # the default 24-line height caps how tall the widget can grow.
         self.textWidget = tk.Text(
             logFrame,
             state=tk.DISABLED,
-            font=("Courier", 9),
-            bg="#1e1e1e",
-            fg="#00ff88",
-            insertbackground="#00ff88",
+            font=("Consolas", 10),
+            bg="#161623",
+            fg="#7ce9b3",
+            insertbackground="#7ce9b3",
             wrap=tk.WORD,
             yscrollcommand=scrollbar.set,
             relief=tk.FLAT,
-            padx=6,
-            pady=4
+            padx=8,
+            pady=4,
+            height=1
         )
         self.textWidget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.textWidget.yview)

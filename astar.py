@@ -27,12 +27,12 @@ def findPath(graph, start, goal):
             if edgeCost == float('inf'):
                 continue
 
-            tentativeG = gScore[current] + edgeCost
+            nextCost = gScore[current] + edgeCost
 
-            if tentativeG < gScore.get(neighbour, float('inf')):
+            if nextCost < gScore.get(neighbour, float('inf')):
                 cameFrom[neighbour] = current
-                gScore[neighbour]   = tentativeG
-                fScore              = tentativeG + heuristic(neighbour)
+                gScore[neighbour]   = nextCost
+                fScore              = nextCost + heuristic(neighbour)
                 heapq.heappush(openSet, (fScore, neighbour))
 
     return []  # no path found

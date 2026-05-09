@@ -7,6 +7,11 @@ from cityGraph import CityGraph
 # Building types that trigger proximity constraints
 PROXIMITY_TYPES = {"Residential", "PowerPlant"}
 
+# Default proximity hop budgets. The UI can override these via runCSP() so
+# constraints can be tweaked live during the viva modification challenge.
+RESIDENTIAL_MAX_HOPS = 3
+POWERPLANT_MAX_HOPS  = 2
+
 
 # ── BFS helpers ──────────────────────────────────────────────────────────────
 
@@ -59,16 +64,16 @@ def isAdjacentConstraintOk(graph, node, buildingType):
 
 def isResidentialOk(graph, node):
     """
-    Constraint 2: Residential must be within 3 hops of a Hospital.
+    Constraint 2: Residential must be within RESIDENTIAL_MAX_HOPS of a Hospital.
     """
-    return bfsHops(graph, node, "Hospital", 3)
+    return bfsHops(graph, node, "Hospital", RESIDENTIAL_MAX_HOPS)
 
 
 def isPowerPlantOk(graph, node):
     """
-    Constraint 3: PowerPlant must be within 2 hops of an Industrial node.
+    Constraint 3: PowerPlant must be within POWERPLANT_MAX_HOPS of an Industrial.
     """
-    return bfsHops(graph, node, "Industrial", 2)
+    return bfsHops(graph, node, "Industrial", POWERPLANT_MAX_HOPS)
 
 
 # ── Domain helpers ────────────────────────────────────────────────────────────
@@ -276,14 +281,22 @@ def identifyWorstConstraint(graph):
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
-def runCSP(graph, buildingCounts):
+def runCSP(graph, buildingCounts, residentialHops=None, powerplantHops=None):
     """
     Place buildings on the graph using CSP backtracking.
+
+    Optional residentialHops / powerplantHops override the module-level proximity
+    constants for this run, so the UI can support live modification of constraints.
 
     Returns (True, None) if a valid layout was found.
     Returns (False, conflictInfo) if no valid layout exists -- a minimum-conflict
     greedy layout is left on the graph and conflictInfo names the blocking constraint.
     """
+    global RESIDENTIAL_MAX_HOPS, POWERPLANT_MAX_HOPS
+    if residentialHops is not None:
+        RESIDENTIAL_MAX_HOPS = residentialHops
+    if powerplantHops is not None:
+        POWERPLANT_MAX_HOPS = powerplantHops
     # Expand counts into a flat list of building types to place
     buildingList = []
     for buildingType, count in buildingCounts.items():

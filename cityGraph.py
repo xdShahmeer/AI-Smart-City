@@ -79,6 +79,30 @@ class CityGraph:
             return RESIDENTIAL_COST
         return STANDARD_COST
 
+    def floodEdge(self, nodeA, nodeB):
+        key = edgeKey(nodeA, nodeB)
+        self.edges[key]["blocked"] = True
+
+    def unfloodEdge(self, nodeA, nodeB):
+        key = edgeKey(nodeA, nodeB)
+        self.edges[key]["blocked"] = False
+
+    def reset(self, rows=None, cols=None):
+        if rows is not None:
+            self.rows = rows
+        if cols is not None:
+            self.cols = cols
+
+        self.primaryHospital    = None
+        self.primaryDepot       = None
+        self.ambulancePositions = []
+
+        self._buildGrid()
+
+    # ------------------------------------------------------------------ #
+    #  Setters                                                             #
+    # ------------------------------------------------------------------ #
+
     def setNodeType(self, node, buildingType):
         lo, hi = POPULATION_RANGES[buildingType]
         pop = random.randint(lo, hi) if lo != hi else 0
@@ -91,6 +115,16 @@ class CityGraph:
             key = edgeKey(node, neighbour)
             self.edges[key]["cost"] = self._calcCost(node, neighbour)
 
+    def setRiskIndex(self, node, riskIndex):
+        self.nodes[node]["riskIndex"] = riskIndex
+
+    def setAccessible(self, node, accessible):
+        self.nodes[node]["accessible"] = accessible
+
+    # ------------------------------------------------------------------ #
+    #  Getters                                                             #
+    # ------------------------------------------------------------------ #
+
     def getNeighbours(self, node):
         # All 4-directional neighbours, no accessibility checks
         return list(self.adjList[node])
@@ -100,8 +134,8 @@ class CityGraph:
         result = []
         for neighbour in self.adjList[node]:
             key = edgeKey(node, neighbour)
-            edgeBlocked  = self.edges[key]["blocked"]
-            nodeOk       = self.nodes[neighbour]["accessible"]
+            edgeBlocked = self.edges[key]["blocked"]
+            nodeOk      = self.nodes[neighbour]["accessible"]
             if not edgeBlocked and nodeOk:
                 result.append(neighbour)
         return result
@@ -120,23 +154,9 @@ class CityGraph:
             return float('inf')
         return baseCost * self.nodes[nodeB]["riskIndex"]
 
-    def floodEdge(self, nodeA, nodeB):
-        key = edgeKey(nodeA, nodeB)
-        self.edges[key]["blocked"] = True
-
-    def unfloodEdge(self, nodeA, nodeB):
-        key = edgeKey(nodeA, nodeB)
-        self.edges[key]["blocked"] = False
-
     def isEdgeBlocked(self, nodeA, nodeB):
         key = edgeKey(nodeA, nodeB)
         return self.edges[key]["blocked"]
-
-    def setRiskIndex(self, node, riskIndex):
-        self.nodes[node]["riskIndex"] = riskIndex
-
-    def setAccessible(self, node, accessible):
-        self.nodes[node]["accessible"] = accessible
 
     def getAllNodes(self):
         return list(self.nodes.keys())
@@ -150,15 +170,3 @@ class CityGraph:
     def getAllEdges(self):
         # Returns (nodeA, nodeB) using canonical ordering
         return list(self.edges.keys())
-
-    def reset(self, rows=None, cols=None):
-        if rows is not None:
-            self.rows = rows
-        if cols is not None:
-            self.cols = cols
-
-        self.primaryHospital    = None
-        self.primaryDepot       = None
-        self.ambulancePositions = []
-
-        self._buildGrid()

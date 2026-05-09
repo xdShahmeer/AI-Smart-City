@@ -20,10 +20,109 @@ CityMind is a grid-based urban intelligence system. The city is modeled as a gra
 
 ---
 
+## Session Checkpoint — Progress Tracker
+
+Live record of where the project stands. Update this at the end of every session so the next one starts with full context. Tick boxes when work lands.
+
+### Done
+
+- [x] `cityGraph.py` — shared graph foundation (nodes, edges, adjacency, getters/setters at bottom)
+- [x] `csp.py` — Challenge 1 CSP layout planner (backtracking + MRV + LCV + forward checking + minimum-conflict fallback)
+- [x] `mst.py` — Challenge 2 Kruskal's MST + dual independent A* corridors between Primary Hospital and Primary Depot
+- [x] `crime.py` — Challenge 5 K-Means clustering then KNN classifier writing `riskIndex` back to the graph
+- [x] `ga.py` — Challenge 3 Genetic Algorithm with Dijkstra-based fitness for ambulance placement
+- [x] `astar.py` — Challenge 4 A* router with Manhattan heuristic, sequential civilian targeting, dynamic reroute on flood
+- [x] `simulation.py` — 20-step loop wiring CSP → MST → crime → GA → A*; `rebuild` for clean restarts
+- [x] `eventLog.py` — Tkinter Text widget event log with scrollback
+- [x] `appController.py` — controller layer between UI and simulation (proper OOP boundary)
+- [x] `ui.py` — single-window Tk UI with Canvas grid, sprite support via PIL, settings, overlays, info panel, event log
+- [x] `main.py` — thin entry point: build controller, build UI, wire event listener, hand off to Tk
+- [x] **Single-window app**: dropped pygame; the whole interface lives in one Tk root
+- [x] **Proper OOP**: `AppUI` only ever calls `AppController`; no direct simulation/graph access from UI
+- [x] CityGraph getters/setters moved to the bottom of the class (style rule)
+- [x] A* renamed `tentativeG` → `nextCost` (style rule: no `tentativeCost` naming)
+- [x] Kenney Tiny Town sprites loaded via `PIL.ImageTk.PhotoImage`, cached on the UI instance
+- [x] **Manual flood tool** — Mouse Tool radio "Flood": two-click adjacent cells to flood the connecting road, with a blue selection ring after the first click
+- [x] **Emergency toggle tool** — Mouse Tool radio "Emergency": click any accessible node to append a civilian to the medical team's queue
+- [x] **Active emergency markers** — pending civilians render as red `!` rings on the grid
+- [x] **Crime heatmap** — proper green → yellow → red gradient over `riskIndex` ∈ [1.0, 2.5] (no more solid bands)
+- [x] **Coverage overlay** — multi-source weighted Dijkstra distances via `AppController.getCoverageDistances()`; recomputes every render so floods reflect immediately
+- [x] **Ambulance icon** — white square + red cross (reads as a medical vehicle without needing a sprite asset)
+- [x] **Controller surface for manual interactions** — `floodEdge`, `addEmergency`, `getActiveEmergencies`, `getCoverageDistances` on `AppController`; the UI never reaches into `Simulation` or `CityGraph` for these operations
+- [x] **Three-column layout** — left = status bar + city grid, middle = controls (Settings, Constraints, Mouse Tool, Overlays, Node Info), right = Legend + event log. The log is visible the moment the window opens.
+- [x] **Dynamic cell size** — `_computeCellSize` targets a ~600 px canvas; the canvas + sprites resize on Generate, and the Tk root re-snaps to its natural size with `geometry("")` so other panels never get cropped or overlapped.
+- [x] **Status bar** — top-of-canvas line that shows `Step X/20` plus civilians reached/pending/skipped and ambulance count. Updates on every step.
+- [x] **Bigger labelled icons** — medical team is a cyan square with bold "MED"; ambulances are white squares with a red cross and "AMB" label below at larger zooms. Path overlay is a yellow dashed line showing the planned A* route.
+- [x] **Tool description text** — one-line help under the Mouse Tool radio group, plus a static hint under Overlays.
+- [x] **Legend panel** — compact static legend in the right column (above the event log) keyed to MED, ambulance, emergency, flooded road, route A, route B, and the planned A* path.
+- [x] **"Generate City" button** — Start renamed to "Generate City" to match the PDF mockup wording.
+- [x] **Sim continues past 20 steps when emergencies are added** — `addEmergency` extends `Simulation.totalSteps` to `currentStep + 20` if the budget already ran out, so the team can actually respond. Auto-play resumes on the next tick.
+- [x] **Live modification readiness** — CSP proximity hops are module-level constants (`RESIDENTIAL_MAX_HOPS`, `POWERPLANT_MAX_HOPS`); `runCSP(... residentialHops=, powerplantHops=)` overrides them per run. UI exposes them in a "Constraints" panel; `Simulation.rebuild` and `AppController.startSimulation` thread the values through.
+
+### In Progress
+
+- [ ] (nothing currently in progress — pick the next item from the list below)
+
+### Remaining / To Improve
+
+- [ ] **Sprite mappings** — confirm each Kenney tile actually matches the building it represents. Current mapping is a guess (`tile_0072` for residential, etc.); the tiles look more like floor textures than buildings. Needs a human visual pass through the asset folder to pick proper houses/factories/hospitals.
+- [ ] **Live constraint coverage** — `Constraints` panel exposes residential/powerplant proximity hops; the CSP `Industrial-not-adjacent` rule and the road cost weights are still hardcoded. Wire those next so the viva live-mod challenge has more dials.
+- [ ] **Group visual theme** — colour palette, typography, panel spacing are functional but not polished. Group decision on the final theme.
+
+### Known Issues
+
+- (none currently blocking the demo — last verified end-to-end: Start, all overlays, both Flood and Emergency tools, multiple Steps, clean window close.)
+
+### Audit Findings — Spec / Report vs Code (raise in next session)
+
+A strict pass through the Phase 1 report and Project Statement turned up these gaps. None block the current demo, but each one weakens the viva story if not addressed.
+
+**Project Statement requirements not fully met**
+
+- **Risk weights never shift mid-simulation.** Statement: "ambulance placements from Challenge 3 are re-evaluated as risk weights shift." Current code sets `riskIndex` once during `crime.runCrime` and never changes it. The GA also runs once. To honour the spec we need either (a) a periodic risk-shift event during the 20-step loop that bumps a district's `riskIndex` and re-runs the GA (or a cheap reposition heuristic), or (b) explicit defence in CLAUDE.md and the viva that the "shift" is the initial baking-in.
+- **10 police officers are predicted but never deployed.** Statement: "The city has 10 police officers to deploy." `crime.py` predicts risk and writes `riskIndex` but does not actually place 10 officers anywhere. Add a deployment step (greedy: top-10 risk nodes) and a small UI marker so the deliverable matches the framing.
+- **K-Means output is dead code.** `crime.py:125` builds `kmeansLabels` and never uses it. The KNN trains on `syntheticLabels` from a deterministic formula. The two-stage pipeline reads as decorative because Stage 1's output never feeds Stage 2. Pick one: feed K-Means cluster labels in as the KNN training labels (true unsupervised → supervised flow), or remove the variable and keep the formula-only pipeline with a clear comment that K-Means is demonstrated for cluster discovery only.
+
+**Phase 1 Report (PDF) GUI elements not yet rendered**
+
+- **Legend & Info panel** missing (listed in remaining items above).
+- **Medical team sprite** missing (listed in remaining items above).
+- **"GENERATE NEW CITY" labelling** missing (listed in remaining items above).
+
+**Code drift between CLAUDE.md design notes and actual code**
+
+- **GA parameters** — code has `POPULATION_SIZE = 20`, `NUM_GENERATIONS = 30`. CLAUDE.md "Challenge 3" section says 50 and 100. Decide which is correct: smaller numbers are faster but risk worse convergence on larger grids; larger numbers match the report. Align both sides.
+- **CSP LCV is approximate** — `lcvOrder` only scores up to `LCV_SAMPLE = 8` candidate cells (the rest are appended unscored after a shuffle). CLAUDE.md describes LCV as scoring all candidates. Defensible perf optimisation but it should be either documented in CLAUDE.md or removed.
+
+**Code hygiene**
+
+- `mst.py` has eight `print(...)` calls that go to stdout. They should flow through the controller / event log so the user sees them in the UI, not in the terminal.
+- `astar.stepRouter(state, graph, eventLog)` accepts an unused `eventLog` parameter. Remove it; the function already returns event strings to the caller.
+- `crime.py` `kmeansLabels` (see "K-Means output is dead code" above).
+
+**Viva-defence items to nail down**
+
+- Why the GA only runs once when the project says placements are "re-evaluated as risk weights shift" — pick a defence and put it in CLAUDE.md.
+- Why approximate LCV is acceptable for this grid size.
+- How K-Means relates to KNN in our pipeline (decorative? feeding labels? validation?).
+
+### Coding-Style Reminders Active in This Project
+
+- **camelCase**, max two words, must mean something. PascalCase only for class names.
+- **Getters and setters at the bottom of every class.** Top of class is constructor and core operations; bottom is the read/write surface.
+- **No "tentativeCost" / "tentative"** naming in A*. Use `nextCost` or another concrete name.
+- **No bracket noise** like `(Hello) world` in comments or output.
+- **No output decoration** (`=====`, `-----`) outside menu rendering.
+- **Strong OOP**: a controller mediates between UI and simulation/graph. Never let the UI mutate the simulation directly.
+- **Library minimalism**: tkinter, sklearn, numpy, Pillow, plus stdlib. Anything new requires justification.
+- **Beginner readable**: a first-year CS student should follow any function in 30 seconds. If not, simplify.
+
+---
+
 ## Language and Environment
 
 - **Language:** Python 3
-- **UI Framework:** Pygame (grid rendering, sprites, overlays) + Tkinter (settings panel, event log, text inputs, buttons)
+- **UI Framework:** Tkinter only — single window. The city grid renders on a Tk `Canvas`; settings, overlays, the node info panel, and the event log live in side panels of the same root window. Pygame was removed because Tk Canvas does everything we need and a single library means a single window.
 - **ML Library:** scikit-learn (`sklearn`) for K-Means clustering and KNN classifier
 
 ---
@@ -32,17 +131,16 @@ CityMind is a grid-based urban intelligence system. The city is modeled as a gra
 
 | Library | Purpose | Why |
 |---|---|---|
-| `pygame` | Render the city grid, sprites, overlays, ambulance movement | Handles real-time 2D graphics in Python in a straightforward way |
-| `tkinter` | Settings panel, event log text area, input fields, simulation control buttons | Built into Python, familiar to the team, handles UI widgets cleanly |
+| `tkinter` | Single-window UI: Canvas grid rendering, settings panel, event log, input fields, control buttons, overlay toggles | Built into Python, supports both 2D drawing and form widgets, no extra dependency |
+| `Pillow` (PIL) | Load Kenney Tiny Town PNG sprites and convert them to `ImageTk.PhotoImage` for the Canvas | Tk's built-in `PhotoImage` only supports GIF/PPM, so PNG sprite support requires PIL. Already widely available |
 | `sklearn` | K-Means clustering (Challenge 5 stage 1), KNN classifier (Challenge 5 stage 2) | Covered in class, beginner friendly, minimal setup |
-| `random` | Random flood events during simulation, GA mutation and crossover | Standard library, no install needed |
-| `math` | Manhattan distance heuristic for A*, Euclidean distance for Primary Hospital selection | Standard library |
-| `collections` | `deque` for BFS traversal, `defaultdict` for adjacency list | Standard library |
-| `heapq` | Priority queue for A* and Kruskal's | Standard library |
-| `copy` | Shallow copies of edge lists for MST backup route logic | Standard library |
 | `numpy` | Feature arrays for K-Means and KNN input | Required by sklearn, beginner friendly for array math |
+| `random` | Random flood events during simulation, GA mutation and crossover | Standard library, no install needed |
+| `math` | Euclidean distance for Primary Hospital selection (Manhattan distance is inline) | Standard library |
+| `collections` | `deque` for BFS traversal, `defaultdict` for adjacency list | Standard library |
+| `heapq` | Priority queue for A*, Dijkstra, and Kruskal's | Standard library |
 
-No external libraries beyond these. Everything above is either built into Python or already taught in class.
+No external libraries beyond these. Everything above is either built into Python or installable through the standard tooling. Pygame and `copy` were removed in the refactor because nothing required them anymore.
 
 ---
 
@@ -64,21 +162,22 @@ No external libraries beyond these. Everything above is either built into Python
 
 ```
 AI proj/
-├── main.py              # Entry point, launches UI and simulation loop
-├── cityGraph.py         # Shared city graph — nodes, edges, update methods
+├── main.py              # Thin entry point: builds AppController + AppUI, hands control to Tk
+├── appController.py     # Controller layer mediating UI <-> simulation/graph (proper OOP boundary)
+├── cityGraph.py         # Shared city graph — nodes, edges, getters/setters
 ├── csp.py               # Challenge 1: CSP city layout planner
 ├── mst.py               # Challenge 2: Road network via Kruskal + A* backup route
 ├── ga.py                # Challenge 3: Ambulance placement via Genetic Algorithm
 ├── astar.py             # Challenge 4: A* emergency routing with dynamic rerouting
 ├── crime.py             # Challenge 5: K-Means clustering + KNN crime risk predictor
 ├── simulation.py        # 20-step simulation loop, flood events, step controller
-├── ui.py                # Pygame rendering, overlays, sprite drawing
+├── ui.py                # Single-window Tk UI: Canvas grid + control panels
 ├── eventLog.py          # Tkinter event log panel
-├── assets/              # Sprite images (to be added)
+├── assets/              # Kenney Tiny Town sprites (loaded via PIL)
 └── CLAUDE.md            # This file
 ```
 
-Each group member works primarily in their assigned files. The shared contract is `cityGraph.py` — any change to its public methods must be discussed with the full group before merging.
+Each group member works primarily in their assigned files. The shared contract is `cityGraph.py` — any change to its public methods must be discussed with the full group before merging. The UI layer (`ui.py`) only ever calls `appController.py`; it never reaches into the simulation or graph internals beyond read-only rendering, which keeps responsibilities clean.
 
 ---
 
@@ -403,19 +502,19 @@ Crime module runs **once after the CSP and MST are complete** but **before the s
 
 ### Layout
 
-Two panels side by side:
+Single Tk window with two side-by-side panels:
 
-- **Left (Pygame window):** The city grid — sprites, roads, overlays, ambulance positions
-- **Right (Tkinter frame):** Settings panel at top, node info panel in middle, event log scrollable text area at bottom
+- **Left:** A `tk.Canvas` that draws the city grid — building rectangles or sprites, roads as lines between centres, route highlights, ambulances as circles, the medical team as a diamond.
+- **Right:** A 360-pixel control column containing the settings panel at the top, the overlay toggle row, the node info panel, and the event log filling whatever space remains.
 
 ### Grid rendering
 
-- Each node is a square cell drawn in Pygame
-- Building types shown as sprites (placeholder coloured rectangles until sprite assets are ready)
-- Roads drawn as lines between connected nodes
-- Flooded roads drawn in a distinct colour (blue)
-- The ambulance sprite moves one cell per simulation step
-- UI design and creative visual theme to be decided as a group — the better the design, the better the evaluation score
+- Each node is a square cell drawn on the Canvas at `CELL_SIZE = 50` pixels with a `MARGIN = 4` border.
+- Building types render as Kenney Tiny Town sprites loaded through `PIL.ImageTk.PhotoImage`. If a sprite is missing, the cell falls back to a coloured rectangle.
+- Roads draw as lines between node centres. Flooded roads paint blue regardless of overlay; the road-network overlay additionally tints residential-discounted roads yellow.
+- Route A and Route B (the two emergency corridors from MST/A*) overlay the base roads in distinct thick lines (orange and green).
+- Ambulances render as white circles. The medical team renders as a cyan diamond at its current cell.
+- UI design and creative visual theme are still up to the group — the project rubric awards up to full marks for interface creativity.
 
 ### Overlay toggles (buttons in Tkinter panel)
 
@@ -571,17 +670,24 @@ All core Python files have been written. Below is a record of what each file con
 - `addSeparator()` — inserts `"---" * 20` divider line
 
 ### `ui.py`
-- `AppUI(graph, simulation)` — no eventLog parameter; creates its own `EventLog` during `setup()`
-- Pygame window: CELL_SIZE=60, MARGIN=4, deep navy background, coloured rects per building type
-- Tkinter window: settings panel (grid size, 6 building counts, flood prob slider, step delay slider), Start/Reset/Step/Play-Pause buttons, 3 overlay toggles, node info panel, event log
-- Three overlays: `"roads"` (colour-coded roads), `"coverage"` (BFS distance blue heatmap), `"crime"` (riskIndex colour)
-- `onStartSimulation`, `onReset`, `onStep` are placeholder lambdas replaced by `main.py`
+- `AppUI(controller)` — receives only the `AppController`; never sees `Simulation` or `CityGraph` directly
+- Single Tk root window. Left side is a `tk.Canvas` of `CELL_SIZE * cols` by `CELL_SIZE * rows` for the grid. Right side is a 360-pixel control panel column.
+- Sprites loaded once via `PIL.ImageTk.PhotoImage` and cached on the instance to keep references alive.
+- `_render()` clears the canvas and redraws every frame; cheap enough for the supported grid sizes.
+- Three overlay modes: `"roads"`, `"coverage"`, `"crime"`. Toggling re-renders.
+- Auto-play uses `Tk.after(100, ...)` to poll the controller's `autoStepIfDue(stepDelay)`.
+- Click handler: maps Canvas pixel coords to `(row, col)`, asks the controller for node info, populates the side panel.
+- All settings (grid size, building counts, flood probability, step delay) come from `getSimSettings()` — handed to the controller as a dict.
+
+### `appController.py`
+- `AppController(defaultBuildings, gridSize, floodProbability)` — owns the `CityGraph` and `Simulation`.
+- Public surface: `startSimulation`, `stepSimulation`, `autoStepIfDue`, `resetSimulation`, `getNodeInfo`, plus getters `getGraph`, `getSimulation`, `getRouterState`, `getRoutes`, `isSetupDone`, `isFinished`.
+- `setEventListener(callback)` registers the UI's log function so simulation events flow into the event log without the UI polling the simulation.
+- This class is the OOP boundary: the UI calls into it, never around it.
 
 ### `main.py`
-- Thin entry point: creates `CityGraph`, `Simulation`, `AppUI`, wires callbacks, runs 30 FPS main loop
-- Callbacks defined as nested functions inside `main()` — no globals needed
-- Auto-play calls `sim.step()` each iteration with configured step delay
-- `pygame.quit()` called on exit
+- Thin entry point: builds `AppController`, builds `AppUI(controller)`, registers the UI's `addLog` as the controller's event listener, calls `appUI.setup()` then `appUI.run()`.
+- No more pygame loop, no more globals, no more callback wiring -- the UI drives Tk's `mainloop`.
 
 ---
 
