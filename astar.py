@@ -2,44 +2,21 @@ import heapq
 import random
 
 
-def findPath(graph, start, goal):
-    # A* from start to goal using Manhattan distance as the heuristic.
-    # Returns an ordered list of nodes [start, ..., goal], or [] if unreachable.
-
-    def heuristic(node):
-        return abs(node[0] - goal[0]) + abs(node[1] - goal[1])
-
-    # openSet entries: (fScore, node)
-    openSet = []
-    heapq.heappush(openSet, (heuristic(start), start))
-
-    cameFrom = {}
-    gScore   = {start: 0.0}
-
-    while openSet:
-        _, current = heapq.heappop(openSet)
-
-        if current == goal:
-            return _reconstructPath(cameFrom, current)
-
-        for neighbour in graph.getAccessibleNeighbours(current):
-            edgeCost = graph.getWeightedCost(current, neighbour)
-            if edgeCost == float('inf'):
-                continue
-
-            nextCost = gScore[current] + edgeCost
-
-            if nextCost < gScore.get(neighbour, float('inf')):
-                cameFrom[neighbour] = current
-                gScore[neighbour]   = nextCost
-                fScore              = nextCost + heuristic(neighbour)
-                heapq.heappush(openSet, (fScore, neighbour))
-
-    return []  # no path found
+# Number of civilians spawned at the start of the simulation. The user can
+# add more later through the Emergency tool.
+NUM_INITIAL_CIVILIANS = 5
 
 
-def _reconstructPath(cameFrom, current):
-    # Walk back through cameFrom to build the path in order.
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def manhattanDistance(nodeA, nodeB):
+    # Manhattan distance is the admissible heuristic on a 4-direction grid:
+    # the absolute row + column difference is the minimum number of steps.
+    return abs(nodeA[0] - nodeB[0]) + abs(nodeA[1] - nodeB[1])
+
+
+def reconstructPath(cameFrom, current):
+    # Walk back through the cameFrom map to build the full path in order.
     path = [current]
     while current in cameFrom:
         current = cameFrom[current]
@@ -48,45 +25,85 @@ def _reconstructPath(cameFrom, current):
     return path
 
 
+# ── A* search with weighted edges ─────────────────────────────────────────────
+
+def findPath(graph, start, goal):
+    # A* from start to goal using Manhattan distance as the heuristic.
+    # Returns the ordered list [start, ..., goal], or [] if unreachable.
+
+    # Open set entries: (fScore, node)
+    openSet = []
+    heapq.heappush(openSet, (manhattanDistance(start, goal), start))
+
+    cameFrom = {}
+    gScore   = {start: 0.0}
+
+    while openSet:
+        currentF, current = heapq.heappop(openSet)
+
+        if current == goal:
+            return reconstructPath(cameFrom, current)
+
+        for neighbour in graph.getAccessibleNeighbours(current):
+            edgeCost = graph.getWeightedCost(current, neighbour)
+            if edgeCost == float('inf'):
+                continue
+
+            nextCost = gScore[current] + edgeCost
+
+            knownBest = gScore.get(neighbour, float('inf'))
+            if nextCost < knownBest:
+                cameFrom[neighbour] = current
+                gScore[neighbour]   = nextCost
+                fScore              = nextCost + manhattanDistance(neighbour, goal)
+                heapq.heappush(openSet, (fScore, neighbour))
+
+    return []
+
+
+# ── Router state for the medical team ─────────────────────────────────────────
+
 class RouterState:
     def __init__(self, graph):
         self.currentPos    = graph.primaryHospital
         self.civilians     = self._generateCivilians(graph)
-        self.currentPath   = []   # remaining steps to the current civilian
+        self.currentPath   = []   # remaining cells on the way to the current civilian
         self.currentTarget = 0    # index of the civilian we are heading to
-        self.skipped       = []   # civilians that could not be reached
-        self.reached       = []   # civilians successfully reached
+        self.skipped       = []   # civilians the team could not reach
+        self.reached       = []   # civilians the team has reached
 
     def _generateCivilians(self, graph):
-        # Pick up to 5 accessible nodes that are not the primary hospital.
-        candidates = [
-            n for n in graph.getAccessibleNodes()
-            if n != graph.primaryHospital
-        ]
-        return random.sample(candidates, min(5, len(candidates)))
+        # Pick up to NUM_INITIAL_CIVILIANS accessible nodes that are not the
+        # primary hospital itself.
+        candidates = []
+        for node in graph.getAccessibleNodes():
+            if node != graph.primaryHospital:
+                candidates.append(node)
+
+        howMany = min(NUM_INITIAL_CIVILIANS, len(candidates))
+        return random.sample(candidates, howMany)
 
 
 def initRouter(graph):
-    # Build and return the initial router state for the medical team.
     return RouterState(graph)
 
 
-def stepRouter(state, graph, eventLog):
-    # Advance the medical team one cell toward the current civilian target.
-    # Returns an event description string on notable events, None on a plain move.
+# ── Per-step routing logic ────────────────────────────────────────────────────
 
-    # All civilians handled
+def stepRouter(state, graph):
+    # Advance the medical team one cell toward the current civilian target.
+    # Returns an event description on notable events, None on a plain move.
+
     if state.currentTarget >= len(state.civilians):
         return "Medical team has reached all civilians."
 
     goal = state.civilians[state.currentTarget]
 
-    # No path yet for this civilian -- compute one now
+    # Compute a path if we don't have one yet for this civilian
     if not state.currentPath:
         path = findPath(graph, state.currentPos, goal)
 
         if not path:
-            # Civilian is completely cut off
             state.skipped.append(goal)
             state.currentTarget += 1
             state.currentPath    = []
@@ -95,13 +112,13 @@ def stepRouter(state, graph, eventLog):
         # Drop the start node; the team is already there
         state.currentPath = path[1:]
 
-    # Check whether the next cell is still reachable before moving
-    nextCell = state.currentPath[0]
-    edgeBlocked  = graph.isEdgeBlocked(state.currentPos, nextCell)
-    nodeBlocked  = not graph.nodes[nextCell]["accessible"]
+    # Make sure the next cell is still reachable before we step into it
+    nextCell    = state.currentPath[0]
+    edgeBlocked = graph.isEdgeBlocked(state.currentPos, nextCell)
+    nodeBlocked = not graph.nodes[nextCell]["accessible"]
 
     if edgeBlocked or nodeBlocked:
-        # Something is now blocking the route -- reroute
+        # The route went bad mid-journey -- recompute from the current position
         newPath = findPath(graph, state.currentPos, goal)
 
         if not newPath:
@@ -122,4 +139,4 @@ def stepRouter(state, graph, eventLog):
         state.currentPath    = []
         return f"Medical team reached civilian at {goal}."
 
-    return None  # normal move, nothing to log
+    return None

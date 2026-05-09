@@ -58,6 +58,19 @@ Live record of where the project stands. Update this at the end of every session
 - [x] **"Generate City" button** — Start renamed to "Generate City" to match the PDF mockup wording.
 - [x] **Sim continues past 20 steps when emergencies are added** — `addEmergency` extends `Simulation.totalSteps` to `currentStep + 20` if the budget already ran out, so the team can actually respond. Auto-play resumes on the next tick.
 - [x] **Live modification readiness** — CSP proximity hops are module-level constants (`RESIDENTIAL_MAX_HOPS`, `POWERPLANT_MAX_HOPS`); `runCSP(... residentialHops=, powerplantHops=)` overrides them per run. UI exposes them in a "Constraints" panel; `Simulation.rebuild` and `AppController.startSimulation` thread the values through.
+- [x] **Industrial-adjacency rule is live-modifiable** — `INDUSTRIAL_ADJACENCY_RULE` flag in `csp.py`, `runCSP(... industrialAdjacencyRule=)` override, checkbox in the Constraints panel.
+- [x] **10 police officers deployed** — `crime.deployPoliceOfficers` greedy top-10 by `riskIndex`; rendered as blue "P" badges and listed in the legend.
+- [x] **K-Means is no longer dead code** — `crime.runCrime` now cross-validates K-Means clusters against the synthetic formula labels and logs the agreement percentage and per-tier counts. KNN still trains on the synthetic dataset per spec.
+- [x] **MST events flow through the event log** — `mst.buildRoadNetwork` returns `(routeA, routeB, events)`; the controller forwards them to the UI instead of stdout.
+- [x] **`astar.stepRouter` cleaned up** — dropped the unused `eventLog` parameter.
+- [x] **GA params aligned** — code and CLAUDE.md both at 30 population / 60 generations, with a fitness cache so elitism doesn't re-evaluate the same chromosome.
+- [x] **Approximate LCV documented** — `LCV_SAMPLE = 8` is now called out in CLAUDE.md's Challenge 1 section with the rationale.
+- [x] **UI polish** — Segoe UI body / Consolas mono fonts, flat-borderless LabelFrames, two-row button bar with consistent fill, hover cursors, gradient status bar, log Text widget grows to fill the column (was capped at the default 24-line height).
+- [x] **Tilemap sprites adopted** — `assets/kenney_tiny_town/Tilemap/` `building1` and `building2` for buildings (alternated by category); `grass`, `wavy_grass`, `flower_ground`, `stoned_grass` for Empty cells, picked deterministically per coordinate so the layout looks varied but stable across renders.
+- [x] **Sim continues past 20 steps while civilians are pending** — `Simulation.isFinished` only returns True after the 20-step budget AND zero pending civilians, capped at +30 extra steps; the summary message reports actual step count instead of `totalSteps`.
+- [x] **Codebase-wide readability pass** — every `lambda` removed, replaced with named helper functions; cryptic two-letter coordinate variables (`cx`, `cy`, `ax`, `ay`, `bx`, `by`, `ox`, `oy`, `r`, `c`, `nb`, etc.) renamed to spelled-out names (`centreX`, `centreY`, `startX`, `startY`, `badgeX`, `badgeY`, `row`, `col`, `neighbour`); generator expressions, comprehensions with conditions, and clever uses of `min`/`max`/`sum`/`sorted(... key=)` rewritten as explicit loops; dead imports (`from cityGraph import CityGraph` in `csp.py` and `mst.py`), the unused `PROXIMITY_TYPES` constant, the never-called `Simulation.autoRun`, and the unused `eventLog` parameter on `astar.stepRouter` all removed.
+- [x] **New asset folder wired in** — sprites now load from `assets/` directly (no `kenney_tiny_town/Tilemap` subpath). Mappings: `school.png` for School, `factory2.png` for Industrial, `building1.png` for Hospital and PowerPlant, `building2.png` for Residential and AmbulanceDepot. Empty cells use `grass`, `wavy_grass`, `flower_ground`, `stoned_grass` picked deterministically per coordinate. The `ambulance.png` sprite replaces the hand-drawn cross-on-square ambulance icon.
+- [x] **Animated tree** — `spr_tree_animated.png` (2496×64 strip, 39 frames of 64×64) is sliced and resized at sprite-load time. About one in seven Empty cells deterministically becomes a "tree cell" and animates the current frame. A single 100 ms tick (`_scheduleTick`) drives both the auto-step loop and the frame advance.
 
 ### In Progress
 
@@ -65,46 +78,41 @@ Live record of where the project stands. Update this at the end of every session
 
 ### Remaining / To Improve
 
-- [ ] **Sprite mappings** — confirm each Kenney tile actually matches the building it represents. Current mapping is a guess (`tile_0072` for residential, etc.); the tiles look more like floor textures than buildings. Needs a human visual pass through the asset folder to pick proper houses/factories/hospitals.
-- [ ] **Live constraint coverage** — `Constraints` panel exposes residential/powerplant proximity hops; the CSP `Industrial-not-adjacent` rule and the road cost weights are still hardcoded. Wire those next so the viva live-mod challenge has more dials.
-- [ ] **Group visual theme** — colour palette, typography, panel spacing are functional but not polished. Group decision on the final theme.
+- [ ] **Risk weights shift mid-simulation** (highest priority for the viva story). Either implement a periodic risk-shift event during the 20-step loop that bumps a district's `riskIndex` and triggers an ambulance reposition (greedy or partial GA re-run), or commit to defending the static-after-setup design choice in CLAUDE.md and the demo. See "Audit Findings" for the longer write-up.
+- [ ] **Road cost weights live-modifiable** — residential 0.8, standard 1.0 are still hardcoded in `cityGraph.py`. Surface them in the Constraints panel for full live-modification coverage.
+- [ ] **Sprite review** — pick which Tilemap sprite (building1 vs building2) goes with which building category once we look at them together. Currently alternated by guess.
+- [ ] **Group visual theme decision** — colour palette and typography are now functional and consistent (Segoe UI / Consolas, flat panels, accent teal). Final group sign-off still pending.
 
 ### Known Issues
 
 - (none currently blocking the demo — last verified end-to-end: Start, all overlays, both Flood and Emergency tools, multiple Steps, clean window close.)
 
-### Audit Findings — Spec / Report vs Code (raise in next session)
+### Audit Findings — Spec / Report vs Code
 
-A strict pass through the Phase 1 report and Project Statement turned up these gaps. None block the current demo, but each one weakens the viva story if not addressed.
+Most of the original audit items have now been addressed. What's left here is the work that is genuinely architectural or design-debate territory.
 
-**Project Statement requirements not fully met**
+**Resolved this session**
 
-- **Risk weights never shift mid-simulation.** Statement: "ambulance placements from Challenge 3 are re-evaluated as risk weights shift." Current code sets `riskIndex` once during `crime.runCrime` and never changes it. The GA also runs once. To honour the spec we need either (a) a periodic risk-shift event during the 20-step loop that bumps a district's `riskIndex` and re-runs the GA (or a cheap reposition heuristic), or (b) explicit defence in CLAUDE.md and the viva that the "shift" is the initial baking-in.
-- **10 police officers are predicted but never deployed.** Statement: "The city has 10 police officers to deploy." `crime.py` predicts risk and writes `riskIndex` but does not actually place 10 officers anywhere. Add a deployment step (greedy: top-10 risk nodes) and a small UI marker so the deliverable matches the framing.
-- **K-Means output is dead code.** `crime.py:125` builds `kmeansLabels` and never uses it. The KNN trains on `syntheticLabels` from a deterministic formula. The two-stage pipeline reads as decorative because Stage 1's output never feeds Stage 2. Pick one: feed K-Means cluster labels in as the KNN training labels (true unsupervised → supervised flow), or remove the variable and keep the formula-only pipeline with a clear comment that K-Means is demonstrated for cluster discovery only.
+- [x] **K-Means output is no longer dead code.** `crime.runCrime` now cross-validates K-Means cluster labels against the formula-based synthetic labels and emits two log lines: agreement percentage and per-tier cluster counts. Stage 1 has a visible role; KNN still trains on the synthetic dataset, which keeps the spec's "you decide the logic" requirement intact.
+- [x] **10 police officers are deployed.** `crime.deployPoliceOfficers(graph, count=10)` greedily picks the top-10 highest-risk nodes; `Simulation.setup` calls it after `runCrime` and stores the list on `graph.policeOfficers`. The UI renders each officer as a small blue "P" badge in the cell corner and the legend includes them.
+- [x] **MST events flow through the event log.** `mst.buildRoadNetwork` now returns `(routeA, routeB, events)` instead of printing; `Simulation.setup` collects them and the controller appends them to the in-app event log.
+- [x] **`astar.stepRouter` no longer takes the unused `eventLog` parameter.** Signature is now `stepRouter(state, graph)`.
+- [x] **GA parameter drift fixed.** Code now uses `POPULATION_SIZE = 30`, `NUM_GENERATIONS = 60` — slight bump from the old 20/30, with a fitness cache so elitism does not re-evaluate the same chromosome each generation. CLAUDE.md "Challenge 3" section updated to match.
+- [x] **Approximate LCV documented.** CLAUDE.md "Challenge 1" section now explicitly says only `LCV_SAMPLE = 8` candidate cells are scored per choice, with the rationale.
+- [x] **Industrial-not-adjacent rule now live-modifiable.** `INDUSTRIAL_ADJACENCY_RULE` is a module flag in `csp.py`; `runCSP(... industrialAdjacencyRule=)` overrides it, threaded through `Simulation` and `AppController`. UI exposes a checkbox in the Constraints panel.
 
-**Phase 1 Report (PDF) GUI elements not yet rendered**
+**Still open (raise in next session)**
 
-- **Legend & Info panel** missing (listed in remaining items above).
-- **Medical team sprite** missing (listed in remaining items above).
-- **"GENERATE NEW CITY" labelling** missing (listed in remaining items above).
+- **Risk weights never shift mid-simulation.** Statement: "ambulance placements from Challenge 3 are re-evaluated as risk weights shift." We currently set `riskIndex` once in `crime.runCrime` and never change it, and the GA only runs once. Two acceptable defences for the viva: (a) implement a periodic mid-sim risk-shift event that bumps a district's risk and triggers a cheap ambulance reposition (greedy or partial GA re-run), or (b) defend the design choice that "shift" refers to the initial bake-in driven by user-tweakable inputs. Pick one this session and document it.
+- **Group visual theme.** Functional polish landed (Segoe UI / Consolas fonts, panel-flat look, three-column layout, status bar). Final colour palette and typography details are still a group decision.
+- **Sprite mapping verification.** We're now on the user-supplied `Tilemap/` folder (building1, building2, plus four ground variants). Mapping is plausible but not human-verified for visual coherence; pick which sprite goes with which building category once we look at them together.
+- **Live constraint coverage extension.** The Constraints panel now has the residential/powerplant proximity hops and the Industrial-adjacency toggle. The road cost weights (residential 0.8, standard 1.0) are still hardcoded in `cityGraph.py`; expose them next if we want even more dials for the live-modification challenge.
 
-**Code drift between CLAUDE.md design notes and actual code**
+**Viva-defence items to nail down before the demo**
 
-- **GA parameters** — code has `POPULATION_SIZE = 20`, `NUM_GENERATIONS = 30`. CLAUDE.md "Challenge 3" section says 50 and 100. Decide which is correct: smaller numbers are faster but risk worse convergence on larger grids; larger numbers match the report. Align both sides.
-- **CSP LCV is approximate** — `lcvOrder` only scores up to `LCV_SAMPLE = 8` candidate cells (the rest are appended unscored after a shuffle). CLAUDE.md describes LCV as scoring all candidates. Defensible perf optimisation but it should be either documented in CLAUDE.md or removed.
-
-**Code hygiene**
-
-- `mst.py` has eight `print(...)` calls that go to stdout. They should flow through the controller / event log so the user sees them in the UI, not in the terminal.
-- `astar.stepRouter(state, graph, eventLog)` accepts an unused `eventLog` parameter. Remove it; the function already returns event strings to the caller.
-- `crime.py` `kmeansLabels` (see "K-Means output is dead code" above).
-
-**Viva-defence items to nail down**
-
-- Why the GA only runs once when the project says placements are "re-evaluated as risk weights shift" — pick a defence and put it in CLAUDE.md.
-- Why approximate LCV is acceptable for this grid size.
-- How K-Means relates to KNN in our pipeline (decorative? feeding labels? validation?).
+- The GA-runs-once-vs-spec story (above).
+- Why approximate LCV is acceptable for our grid sizes (already documented in Challenge 1; rehearse the answer).
+- How K-Means now relates to KNN in our pipeline: K-Means is the unsupervised cluster-discovery stage, formula generates the synthetic dataset that satisfies "you decide the logic", KNN trains on that synthetic data, and we cross-validate Stage 1 vs Stage 2 to show the unsupervised view agrees with our formula. (Rehearse this answer; it's the strongest viva story for Challenge 5.)
 
 ### Coding-Style Reminders Active in This Project
 
@@ -255,7 +263,7 @@ Both are valid pruning strategies. Forward checking is chosen here because it is
 1. User specifies counts of each building type via the UI
 2. CSP assigns buildings to grid nodes one at a time
 3. MRV picks the variable (unplaced building type) with the fewest remaining valid grid positions
-4. LCV picks the value (grid cell) that eliminates the fewest options for other unplaced buildings
+4. LCV picks the value (grid cell) that eliminates the fewest options for other unplaced buildings. To keep backtracking fast on larger grids, only the first `LCV_SAMPLE = 8` candidate cells per choice are scored and the rest are appended unscored after a shuffle. This is approximate LCV: the heuristic ordering still beats random and we never lose correctness because forward checking and the leaf proximity validation still gate every full assignment.
 5. Forward checking prunes any grid cell that would immediately violate a constraint after each assignment
 6. Backtracking undoes the last assignment and tries the next option if no valid cell remains
 
@@ -329,9 +337,10 @@ Ambulances can be positioned at **any accessible node** on the grid, not just Am
 
 - 3 ambulances to place
 - A chromosome = a list of 3 node coordinates, e.g. `[(2,3), (7,1), (5,8)]`
-- Population size: 50 chromosomes
-- Generations: 100
+- Population size: 30 chromosomes
+- Generations: 60
 - Mutation rate: 10%
+- Fitness cache: chromosomes are keyed by their sorted-tuple form so elitism does not re-evaluate the same Dijkstra-heavy fitness twice across generations.
 
 ### Fitness function
 

@@ -6,47 +6,52 @@ from ga import dijkstra
 
 
 class AppController:
-    """
-    Mediates between the UI layer and the underlying simulation/graph.
-    The UI talks only to the controller. The controller owns the city graph
-    and the simulation object, and forwards reads/writes through one surface.
-    """
+    # Mediates between the UI layer and the underlying simulation/graph.
+    # The UI talks only to the controller. The controller owns the city
+    # graph and the simulation object and forwards reads/writes through
+    # one well-defined surface.
 
     def __init__(self, defaultBuildings, gridSize=10, floodProbability=0.30):
-        self._graph          = CityGraph(rows=gridSize, cols=gridSize)
-        self._simulation     = Simulation(self._graph, defaultBuildings, floodProbability)
-        self._defaultCounts  = dict(defaultBuildings)
-        self._lastStepTime   = 0.0
-        self._eventListener  = None
+        self._graph         = CityGraph(rows=gridSize, cols=gridSize)
+        self._simulation    = Simulation(self._graph, defaultBuildings, floodProbability)
+        self._defaultCounts = dict(defaultBuildings)
+        self._lastStepTime  = 0.0
+        self._eventListener = None
 
     # ------------------------------------------------------------------ #
     #  Simulation control                                                  #
     # ------------------------------------------------------------------ #
 
     def startSimulation(self, settings):
-        # Rebuild the graph from current settings, then run the full setup
-        # pipeline (CSP, MST, crime, GA, A*). Returns a list of log strings.
-        gridSize         = settings["gridSize"]
-        buildingCounts   = settings["buildings"]
-        floodProbability = settings["floodProbability"]
-        residentialHops  = settings.get("residentialHops", 3)
-        powerplantHops   = settings.get("powerplantHops", 2)
+        # Rebuild the graph from the current settings, then run the full
+        # setup pipeline (CSP, MST, crime, GA, A*). Returns the log lines.
+        gridSize             = settings["gridSize"]
+        buildingCounts       = settings["buildings"]
+        floodProbability     = settings["floodProbability"]
+        residentialHops      = settings.get("residentialHops", 3)
+        powerplantHops       = settings.get("powerplantHops", 2)
+        industrialAdjacency  = settings.get("industrialAdjacencyRule", True)
 
         self._graph.reset(rows=gridSize, cols=gridSize)
         self._simulation.rebuild(
             self._graph, buildingCounts, floodProbability,
             residentialHops=residentialHops,
             powerplantHops=powerplantHops,
+            industrialAdjacencyRule=industrialAdjacency,
         )
 
         logs = []
         logs.append("Setting up city... (CSP, MST, crime, GA, A*)")
 
-        success, conflictInfo = self._simulation.setup()
+        success, conflictInfo, setupEvents = self._simulation.setup()
         if success:
             logs.append("CSP: valid city layout placed.")
         else:
             logs.append(f"CSP: {conflictInfo}")
+
+        # MST + crime modules report through the event log instead of stdout.
+        for entry in setupEvents:
+            logs.append(entry)
 
         logs.append(f"Ambulances placed at: {self._graph.ambulancePositions}")
 
@@ -54,8 +59,10 @@ class AppController:
         return logs
 
     def stepSimulation(self):
-        # Advance one step manually. Returns the events generated.
-        if not self._simulation.setupDone or self._simulation.isFinished():
+        # Advance one step manually. Returns the events produced.
+        if not self._simulation.setupDone:
+            return []
+        if self._simulation.isFinished():
             return []
 
         events = self._simulation.step()
@@ -66,9 +73,11 @@ class AppController:
         return events
 
     def autoStepIfDue(self, stepDelay):
-        # Called from the main loop while auto-play is on.
-        # Fires a step only when stepDelay seconds have passed since the last one.
-        if not self._simulation.setupDone or self._simulation.isFinished():
+        # Called from the Tk main loop while auto-play is on.
+        # Fires a step only when stepDelay seconds have elapsed.
+        if not self._simulation.setupDone:
+            return []
+        if self._simulation.isFinished():
             return []
 
         now = time.time()
@@ -85,17 +94,19 @@ class AppController:
 
     def resetSimulation(self, settings):
         # Wipe graph state and re-create the simulation in a clean state.
-        gridSize         = settings["gridSize"]
-        buildingCounts   = settings["buildings"]
-        floodProbability = settings["floodProbability"]
-        residentialHops  = settings.get("residentialHops", 3)
-        powerplantHops   = settings.get("powerplantHops", 2)
+        gridSize             = settings["gridSize"]
+        buildingCounts       = settings["buildings"]
+        floodProbability     = settings["floodProbability"]
+        residentialHops      = settings.get("residentialHops", 3)
+        powerplantHops       = settings.get("powerplantHops", 2)
+        industrialAdjacency  = settings.get("industrialAdjacencyRule", True)
 
         self._graph.reset(rows=gridSize, cols=gridSize)
         self._simulation.rebuild(
             self._graph, buildingCounts, floodProbability,
             residentialHops=residentialHops,
             powerplantHops=powerplantHops,
+            industrialAdjacencyRule=industrialAdjacency,
         )
         self._lastStepTime = 0.0
 
@@ -114,9 +125,9 @@ class AppController:
     # ------------------------------------------------------------------ #
 
     def floodEdge(self, nodeA, nodeB):
-        # Used by the manual flood tool. Validates both endpoints share an edge,
-        # the edge is unblocked, and the simulation is set up. Returns an event
-        # string on success, None on a no-op.
+        # Used by the manual flood tool. Validates that both endpoints share
+        # an edge, the edge is unblocked, and the simulation is set up.
+        # Returns an event string on success, None on a no-op.
         if not self._simulation.setupDone:
             return None
         if nodeB not in self._graph.getNeighbours(nodeA):
@@ -133,6 +144,7 @@ class AppController:
         # civilian queue so the A* router will route there in turn.
         if not self._simulation.setupDone:
             return None
+
         state = self._simulation.routerState
         if state is None:
             return None
@@ -163,15 +175,21 @@ class AppController:
         # Multi-source weighted Dijkstra: for every node, the minimum weighted
         # distance to any ambulance. Mirrors the metric the GA fitness uses.
         sources = list(self._graph.ambulancePositions)
-        if not sources:
+        if len(sources) == 0:
             return {}
 
-        result = {node: float('inf') for node in self._graph.nodes}
+        # Initialise every node to infinity, then merge each source's distances
+        # by taking the minimum.
+        result = {}
+        for node in self._graph.nodes:
+            result[node] = float('inf')
+
         for source in sources:
-            distMap = dijkstra(self._graph, source)
-            for node, d in distMap.items():
-                if d < result[node]:
-                    result[node] = d
+            distanceMap = dijkstra(self._graph, source)
+            for node in distanceMap:
+                if distanceMap[node] < result[node]:
+                    result[node] = distanceMap[node]
+
         return result
 
     # ------------------------------------------------------------------ #
