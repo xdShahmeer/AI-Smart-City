@@ -89,6 +89,7 @@ COLOURS = {
     "road":             "#cccccc",
     "road_residential": "#f0e080",
     "road_flooded":     "#0080ff",
+    "road_not_built":   "#3a3a5a",
     "medicalTeam":      "#00ffcc",
     "medicalPath":      "#ffd966",
     "routeA":           "#ff6600",
@@ -996,10 +997,17 @@ class AppUI:
             if colour is None:
                 continue
 
+            # Non-built edges render thinner when the road overlay is on so
+            # the user can tell which edges belong to the MST + route network.
+            if self._overlayMode == "roads" and not edgeData.get("built", True):
+                lineWidth = 1
+            else:
+                lineWidth = 2
+
             startX, startY = self._nodeCentre(nodeA)
             endX,   endY   = self._nodeCentre(nodeB)
             self._canvas.create_line(
-                startX, startY, endX, endY, fill=colour, width=2
+                startX, startY, endX, endY, fill=colour, width=lineWidth
             )
 
     def _roadColour(self, graph, nodeA, nodeB, edgeData):
@@ -1007,6 +1015,8 @@ class AppUI:
             return COLOURS["road_flooded"]
 
         if self._overlayMode == "roads":
+            if not edgeData.get("built", True):
+                return COLOURS["road_not_built"]
             typeA = graph.nodes[nodeA]["type"]
             typeB = graph.nodes[nodeB]["type"]
             if typeA == "Residential" or typeB == "Residential":

@@ -12,6 +12,13 @@ import astar
 # could let the loop run indefinitely.
 MAX_EXTRA_STEPS = 30
 
+# Risk-shift event parameters. Every RISK_SHIFT_INTERVAL steps, a few random
+# non-empty nodes get their riskIndex bumped by +0.25 to simulate a crime wave.
+# Ambulances then perform a local greedy reposition in response.
+RISK_SHIFT_INTERVAL   = 5
+RISK_SHIFT_NODE_COUNT = 3
+RISK_SHIFT_AMOUNT     = 0.25
+
 
 class Simulation:
     def __init__(self, graph, buildingCounts, floodProbability=0.30,
@@ -106,6 +113,13 @@ class Simulation:
             if floodEvent is not None:
                 events.append(floodEvent)
 
+        # 1a. Risk weight shift (periodic crime wave + ambulance reposition)
+        riskEvent = self._maybeShiftRisk()
+        if riskEvent is not None:
+            events.append(riskEvent)
+            repositionEvents = self._greedyAmbulanceReposition()
+            events.extend(repositionEvents)
+
         # 2. Move the medical team one cell along its current path
         routerEvent = astar.stepRouter(self.routerState, self.graph)
         if routerEvent is not None:
@@ -153,6 +167,88 @@ class Simulation:
         self.floodedEdges.append((nodeA, nodeB))
 
         return f"[Step {self.currentStep}] Road {nodeA}-{nodeB} flooded automatically."
+
+    def _maybeShiftRisk(self):
+        # Every RISK_SHIFT_INTERVAL steps, bump the riskIndex on a few random
+        # non-empty accessible nodes to simulate a shifting crime landscape.
+        if self.currentStep % RISK_SHIFT_INTERVAL != 0:
+            return None
+
+        candidates = []
+        for node in self.graph.getAccessibleNodes():
+            nodeType = self.graph.nodes[node]["type"]
+            if nodeType != "Empty":
+                candidates.append(node)
+
+        if len(candidates) < RISK_SHIFT_NODE_COUNT:
+            return None
+
+        chosen = random.sample(candidates, RISK_SHIFT_NODE_COUNT)
+        for node in chosen:
+            oldRisk = self.graph.nodes[node]["riskIndex"]
+            newRisk = min(oldRisk + RISK_SHIFT_AMOUNT, 3.0)
+            self.graph.setRiskIndex(node, newRisk)
+
+        return (
+            f"[Step {self.currentStep}] Risk weights shifted: "
+            f"{len(chosen)} nodes increased by {RISK_SHIFT_AMOUNT}. "
+            f"Re-evaluating ambulance positions."
+        )
+
+    def _greedyAmbulanceReposition(self):
+        # For each ambulance, check whether moving to an adjacent accessible
+        # node improves coverage (lower worst-case weighted distance). This
+        # is a cheap local hill-climb -- not a full GA re-run -- so it does
+        # not stall the simulation.
+        positions = self.graph.ambulancePositions
+        if len(positions) == 0:
+            return []
+
+        events = []
+
+        for index in range(len(positions)):
+            currentPos = positions[index]
+
+            # Build the set of other ambulance positions so we skip collisions.
+            otherPositions = set()
+            for otherIndex in range(len(positions)):
+                if otherIndex != index:
+                    otherPositions.add(positions[otherIndex])
+
+            neighbours = self.graph.getAccessibleNeighbours(currentPos, builtOnly=True)
+
+            # Weighted Dijkstra from the current position
+            currentDist = ga.dijkstra(self.graph, currentPos)
+            currentWorst = 0.0
+            for node in self.graph.getAccessibleNodes():
+                if currentDist[node] > currentWorst:
+                    currentWorst = currentDist[node]
+
+            bestNeighbour = None
+            bestWorst     = currentWorst
+
+            for neighbour in neighbours:
+                if neighbour in otherPositions:
+                    continue
+
+                testDist  = ga.dijkstra(self.graph, neighbour)
+                testWorst = 0.0
+                for node in self.graph.getAccessibleNodes():
+                    if testDist[node] > testWorst:
+                        testWorst = testDist[node]
+
+                if testWorst < bestWorst:
+                    bestWorst     = testWorst
+                    bestNeighbour = neighbour
+
+            if bestNeighbour is not None:
+                positions[index] = bestNeighbour
+                events.append(
+                    f"[Step {self.currentStep}] Ambulance at {currentPos} "
+                    f"repositioned to {bestNeighbour} due to risk shift."
+                )
+
+        return events
 
     # ------------------------------------------------------------------ #
     #  Getters                                                             #

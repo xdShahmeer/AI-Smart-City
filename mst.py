@@ -37,9 +37,11 @@ def manhattanDistance(nodeA, nodeB):
     return abs(nodeA[0] - nodeB[0]) + abs(nodeA[1] - nodeB[1])
 
 
-def astarPath(graph, start, goal):
+def astarPath(graph, start, goal, builtOnly=True):
     # Returns the ordered list of nodes from start to goal, or [] if no path.
     # Respects blocked edges so a temporarily blocked Route A is avoided.
+    # When builtOnly is True, only edges marked as built are traversable.
+    # Route B passes builtOnly=False because it adds new roads beyond the MST.
     if start == goal:
         return [start]
 
@@ -64,6 +66,12 @@ def astarPath(graph, start, goal):
         for neighbour in graph.getNeighbours(current):
             if graph.isEdgeBlocked(current, neighbour):
                 continue
+            # Only traverse built edges when requested (Route A uses this;
+            # Route B searches the full grid edge set to find an independent path).
+            if builtOnly:
+                key = edgeKey(current, neighbour)
+                if not graph.edges[key].get("built", False):
+                    continue
             edgeCost = graph.getEdgeCost(current, neighbour)
             newG     = gScore + edgeCost
 
@@ -186,14 +194,17 @@ def buildRoadNetwork(graph):
     events.append(f"[MST] Primary Hospital: {graph.primaryHospital}")
     events.append(f"[MST] Primary Depot:    {graph.primaryDepot}")
 
-    # Step 2: build the MST (illustrates Kruskal's; all edges remain traversable)
+    # Step 2: build the MST and mark those edges as the base built road network.
+    # The downstream A* route searches will only traverse built edges, so Route A
+    # and Route B are guaranteed to stay on the constructed network.
     mstEdges = buildMST(graph)
+    graph.setBuiltEdges(mstEdges)
     events.append(
         f"[MST] Kruskal's MST built: {len(mstEdges)} edges spanning "
         f"{len(graph.getAllNodes())} nodes."
     )
 
-    # Step 3a: find Route A via A*
+    # Step 3a: find Route A via A* (traverses only built MST edges)
     pathA = astarPath(graph, graph.primaryHospital, graph.primaryDepot)
     if len(pathA) == 0:
         events.append("[MST] A* could not find Route A.")
@@ -204,12 +215,20 @@ def buildRoadNetwork(graph):
         routeA.append(edgeKey(pathA[i], pathA[i + 1]))
     events.append(f"[MST] Route A: {len(routeA)} edges, path length {len(pathA)} nodes.")
 
+    # Add Route A edges to the built network
+    allBuilt = list(mstEdges)
+    for edge in routeA:
+        if edge not in allBuilt:
+            allBuilt.append(edge)
+    graph.setBuiltEdges(allBuilt)
+
     # Step 3b: temporarily block Route A so Route B is forced down a different path
     for nodeA, nodeB in routeA:
         graph.floodEdge(nodeA, nodeB)
 
-    # Step 3c: find Route B via A*
-    pathB  = astarPath(graph, graph.primaryHospital, graph.primaryDepot)
+    # Step 3c: find Route B via A* over all grid edges (not just built ones).
+    # Route B represents newly-built emergency roads so it can use any edge.
+    pathB  = astarPath(graph, graph.primaryHospital, graph.primaryDepot, builtOnly=False)
     routeB = []
     if len(pathB) > 0:
         for i in range(len(pathB) - 1):
@@ -223,5 +242,11 @@ def buildRoadNetwork(graph):
     # Step 3d: restore the Route A edges so the rest of the simulation can use them
     for nodeA, nodeB in routeA:
         graph.unfloodEdge(nodeA, nodeB)
+
+    # Final built set = MST + Route A + Route B
+    for edge in routeB:
+        if edge not in allBuilt:
+            allBuilt.append(edge)
+    graph.setBuiltEdges(allBuilt)
 
     return (routeA, routeB, events)

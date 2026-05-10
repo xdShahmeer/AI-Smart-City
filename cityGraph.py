@@ -36,6 +36,7 @@ class CityGraph:
         self.primaryDepot       = None
         self.ambulancePositions = []
         self.policeOfficers     = []
+        self.builtEdges         = []
 
         self._buildGrid()
 
@@ -84,6 +85,7 @@ class CityGraph:
                 self.edges[key] = {
                     "cost":    self._calcCost(node, neighbour),
                     "blocked": False,
+                    "built":   False,
                 }
 
             # Add the neighbour to the adjacency list (no duplicates)
@@ -117,6 +119,7 @@ class CityGraph:
         self.primaryDepot       = None
         self.ambulancePositions = []
         self.policeOfficers     = []
+        self.builtEdges         = []
 
         self._buildGrid()
 
@@ -146,22 +149,44 @@ class CityGraph:
     def setAccessible(self, node, accessible):
         self.nodes[node]["accessible"] = accessible
 
+    def setBuiltEdges(self, builtEdges):
+        # Mark every edge in this list as built. Downstream routing modules
+        # (GA, A*) only traverse edges with built=True when using builtOnly.
+        self.builtEdges = list(builtEdges)
+        for nodeA, nodeB in builtEdges:
+            key = edgeKey(nodeA, nodeB)
+            if key in self.edges:
+                self.edges[key]["built"] = True
+
     # ------------------------------------------------------------------ #
     #  Getters                                                             #
     # ------------------------------------------------------------------ #
 
-    def getNeighbours(self, node):
-        # All 4-direction neighbours regardless of accessibility.
-        return list(self.adjList[node])
+    def getNeighbours(self, node, builtOnly=False):
+        # All 4-direction neighbours. When builtOnly is True, only edges
+        # that have been marked as built (by the MST + routes) are returned.
+        # The CSP uses builtOnly=False because it runs before the MST exists.
+        neighbours = list(self.adjList[node])
+        if not builtOnly:
+            return neighbours
+        result = []
+        for neighbour in neighbours:
+            key = edgeKey(node, neighbour)
+            if key in self.edges and self.edges[key]["built"]:
+                result.append(neighbour)
+        return result
 
-    def getAccessibleNeighbours(self, node):
+    def getAccessibleNeighbours(self, node, builtOnly=False):
         # Only neighbours reachable through an unblocked edge whose target
-        # node is also still accessible.
+        # node is also still accessible. When builtOnly is True, the edge
+        # must also be marked as built by the MST/route phase.
         result = []
         for neighbour in self.adjList[node]:
             key         = edgeKey(node, neighbour)
             edgeBlocked = self.edges[key]["blocked"]
             nodeOk      = self.nodes[neighbour]["accessible"]
+            if builtOnly and not self.edges[key]["built"]:
+                continue
             if not edgeBlocked and nodeOk:
                 result.append(neighbour)
         return result

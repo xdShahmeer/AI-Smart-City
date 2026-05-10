@@ -96,7 +96,7 @@ def isPowerPlantOk(graph, node):
 
 # ── Domain helpers ────────────────────────────────────────────────────────────
 
-def getValidCells(graph, buildingType, assignment):
+def getValidCells(graph, buildingType):
     # Returns every Empty node where buildingType can be placed without
     # violating an active constraint. Proximity constraints are only checked
     # once their anchor type is already placed -- this prunes bad branches
@@ -134,7 +134,7 @@ def pickMRV(unplaced, graph):
     bestCount = float('inf')
 
     for buildingType in typesToConsider:
-        validCells = getValidCells(graph, buildingType, None)
+        validCells = getValidCells(graph, buildingType)
         if len(validCells) < bestCount:
             bestCount = len(validCells)
             bestType  = buildingType
@@ -147,7 +147,7 @@ def pickMRV(unplaced, graph):
 def lcvOrder(graph, buildingType, unplaced):
     # LCV heuristic: order candidate cells by how few options they remove
     # for the remaining unplaced types. Try the least constraining cells first.
-    candidates = getValidCells(graph, buildingType, None)
+    candidates = getValidCells(graph, buildingType)
 
     if len(candidates) <= LCV_SAMPLE:
         toScore   = candidates
@@ -169,7 +169,7 @@ def lcvOrder(graph, buildingType, unplaced):
 
         remainingOptions = 0
         for otherType in otherTypes:
-            remainingOptions += len(getValidCells(graph, otherType, None))
+            remainingOptions += len(getValidCells(graph, otherType))
 
         graph.setNodeType(cell, "Empty")
         scored.append((remainingOptions, cell))
@@ -193,7 +193,7 @@ def forwardCheck(graph, unplaced):
         if buildingType in seenTypes:
             continue
         seenTypes.add(buildingType)
-        if len(getValidCells(graph, buildingType, None)) == 0:
+        if len(getValidCells(graph, buildingType)) == 0:
             return False
     return True
 

@@ -33,7 +33,7 @@ def dijkstra(graph, source):
         if currentDist > distance[node]:
             continue
 
-        for neighbour in graph.getAccessibleNeighbours(node):
+        for neighbour in graph.getAccessibleNeighbours(node, builtOnly=True):
             edgeCost = graph.getWeightedCost(node, neighbour)
             newDist  = currentDist + edgeCost
             if newDist < distance[neighbour]:

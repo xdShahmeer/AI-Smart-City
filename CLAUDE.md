@@ -78,7 +78,7 @@ Live record of where the project stands. Update this at the end of every session
 
 ### Remaining / To Improve
 
-- [ ] **Risk weights shift mid-simulation** (highest priority for the viva story). Either implement a periodic risk-shift event during the 20-step loop that bumps a district's `riskIndex` and triggers an ambulance reposition (greedy or partial GA re-run), or commit to defending the static-after-setup design choice in CLAUDE.md and the demo. See "Audit Findings" for the longer write-up.
+- [x] **Risk weights shift mid-simulation** — every 5 steps during the 20-step loop, 2-3 non-empty nodes get their riskIndex bumped by +0.25 to simulate a crime wave. A greedy local hill-climb (`_greedyAmbulanceReposition`) repositions ambulances in response — each ambulance checks its adjacent accessible neighbours and moves if doing so improves worst-case coverage.
 - [ ] **Road cost weights live-modifiable** — residential 0.8, standard 1.0 are still hardcoded in `cityGraph.py`. Surface them in the Constraints panel for full live-modification coverage.
 - [ ] **Sprite review** — pick which Tilemap sprite (building1 vs building2) goes with which building category once we look at them together. Currently alternated by guess.
 - [ ] **Group visual theme decision** — colour palette and typography are now functional and consistent (Segoe UI / Consolas, flat panels, accent teal). Final group sign-off still pending.
@@ -103,14 +103,14 @@ Most of the original audit items have now been addressed. What's left here is th
 
 **Still open (raise in next session)**
 
-- **Risk weights never shift mid-simulation.** Statement: "ambulance placements from Challenge 3 are re-evaluated as risk weights shift." We currently set `riskIndex` once in `crime.runCrime` and never change it, and the GA only runs once. Two acceptable defences for the viva: (a) implement a periodic mid-sim risk-shift event that bumps a district's risk and triggers a cheap ambulance reposition (greedy or partial GA re-run), or (b) defend the design choice that "shift" refers to the initial bake-in driven by user-tweakable inputs. Pick one this session and document it.
+- [x] **Risk weights never shift mid-simulation.** Implemented via `_maybeShiftRisk` + `_greedyAmbulanceReposition` in `simulation.py`. Every 5 steps, 3 non-empty nodes get riskIndex +0.25, and ambulances perform a local neighbour-swap evaluation using weighted Dijkstra.
 - **Group visual theme.** Functional polish landed (Segoe UI / Consolas fonts, panel-flat look, three-column layout, status bar). Final colour palette and typography details are still a group decision.
 - **Sprite mapping verification.** We're now on the user-supplied `Tilemap/` folder (building1, building2, plus four ground variants). Mapping is plausible but not human-verified for visual coherence; pick which sprite goes with which building category once we look at them together.
 - **Live constraint coverage extension.** The Constraints panel now has the residential/powerplant proximity hops and the Industrial-adjacency toggle. The road cost weights (residential 0.8, standard 1.0) are still hardcoded in `cityGraph.py`; expose them next if we want even more dials for the live-modification challenge.
 
 **Viva-defence items to nail down before the demo**
 
-- The GA-runs-once-vs-spec story (above).
+- The GA-runs-once-vs-spec story (above — now resolved with greedy reposition on risk shift).
 - Why approximate LCV is acceptable for our grid sizes (already documented in Challenge 1; rehearse the answer).
 - How K-Means now relates to KNN in our pipeline: K-Means is the unsupervised cluster-discovery stage, formula generates the synthetic dataset that satisfies "you decide the logic", KNN trains on that synthetic data, and we cross-validate Stage 1 vs Stage 2 to show the unsupervised view agrees with our formula. (Rehearse this answer; it's the strongest viva story for Challenge 5.)
 
@@ -350,21 +350,21 @@ For a given chromosome (placement of 3 ambulances), compute the **weighted short
 
 ### How it works
 
-1. Generate 50 random valid placements as initial population (all 3 positions must be accessible nodes)
-2. For each generation: evaluate fitness of all 50 chromosomes using Dijkstra
-3. Select top 50% (25 chromosomes) as parents — elitism keeps the best solutions
-4. Crossover: pair up parents and split each chromosome at a random index to produce 25 children
+1. Generate 30 random valid placements as initial population (all 3 positions must be accessible nodes)
+2. For each generation: evaluate fitness of all 30 chromosomes using Dijkstra
+3. Select top 50% (15 chromosomes) as parents — elitism keeps the best solutions
+4. Crossover: pair up parents and split each chromosome at a random index to produce 15 children
 5. Mutate: for each child, with 10% probability replace one ambulance position with a random accessible node
-6. New generation = the 25 parents + 25 children (keeps population at 50)
-7. Repeat for 100 generations, keep the chromosome with the lowest fitness score
+6. New generation = the 15 parents + 15 children (keeps population at 30)
+7. Repeat for 60 generations, keep the chromosome with the lowest fitness score
 
 ### Role in simulation
 
 The GA runs **once before the simulation starts** to determine the initial ambulance positions. This is the optimal placement given the city layout and crime risk weights.
 
-During the 20-step simulation, ambulances do **not** move unless their current node becomes inaccessible (`accessible = False` due to flooding). If that happens, a simple greedy fallback kicks in: check all 4 neighbouring nodes, move the ambulance to the nearest accessible one. The GA is not re-run during simulation — it is computationally expensive and its purpose is the initial optimal placement. The greedy fallback during simulation demonstrates a second strategy (reactive vs. optimal) which is a strong viva talking point.
+During the 20-step simulation, ambulances do **not** move unless their current node becomes inaccessible (`accessible = False` due to flooding). If that happens, a simple greedy fallback kicks in: check all 4 neighbouring nodes, move the ambulance to the nearest accessible one. The GA is not re-run during simulation — it is computationally expensive and its purpose is the initial optimal placement. Every 5 steps, a risk-shift event bumps risk indices on a few nodes, and ambulances perform a cheap greedy neighbour-swap reposition in response. The combination of (1) optimal GA placement + (2) periodic risk-shift reposition + (3) flood-triggered relocation demonstrates three distinct strategies at work.
 
-The project statement says "ambulance placements from Challenge 3 are re-evaluated as risk weights shift" — this refers to the GA taking risk weights as input before the simulation begins, not re-running the GA every step.
+The project statement says "ambulance placements from Challenge 3 are re-evaluated as risk weights shift" — this is satisfied by the periodic risk-shift event in `simulation.py` that bumps `riskIndex` on random nodes and triggers `_greedyAmbulanceReposition`, which re-evaluates each ambulance's local coverage using weighted Dijkstra.
 
 ### Output
 
@@ -488,11 +488,12 @@ Crime module runs **once after the CSP and MST are complete** but **before the s
 - Each step executes in this order:
   1. Check if a random flood event occurs (30% chance per step)
   2. If flood: randomly pick one accessible edge, block it in both directions, log the event
-  3. Move the medical team one cell along its current A* path
-  4. If the next cell is now blocked: re-run A* from the current position; if still no path, log civilian as unreachable and skip
-  5. Check if any ambulance is now on an inaccessible node: if yes, greedy-move it to the nearest accessible neighbour
-  6. Update the UI (redraw grid, overlays, event log)
-  7. Pause for the configured step delay
+  3. Every 5 steps: risk-shift event bumps riskIndex on 3 nodes + ambulances greedily reposition
+  4. Move the medical team one cell along its current A* path
+  5. If the next cell is now blocked: re-run A* from the current position; if still no path, log civilian as unreachable and skip
+  6. Check if any ambulance is now on an inaccessible node: if yes, greedy-move it to the nearest accessible neighbour
+  7. Update the UI (redraw grid, overlays, event log)
+  8. Pause for the configured step delay
 
 ### Flood probability
 
@@ -603,7 +604,7 @@ A* is a single-source single-goal algorithm. Running it once for the whole list 
 The downstream KNN classifier predicts exactly 3 labels (High, Medium, Low). Using k=3 means the clusters map directly to these labels with no ambiguity. Elbow method would add complexity with no benefit.
 
 **Why GA runs once, not per step?**
-The GA explores 50 chromosomes over 100 generations. Running this per step would cause multi-second delays between steps, breaking the simulation feel. The GA finds the optimal initial placement; the greedy fallback handles mid-simulation disruptions. Two strategies demonstrated — stronger viva argument than one.
+The GA explores 30 chromosomes over 60 generations. Running this per step would cause multi-second delays between steps, breaking the simulation feel. The GA finds the optimal initial placement; the greedy risk-shift reposition handles mid-simulation risk-weight changes. Two strategies demonstrated — optimal static placement + reactive local hill-climb — which is a stronger viva argument than one.
 
 **Why Primary Hospital = closest to grid centre?**
 Deterministic (same result every run), simple to compute, reflects real urban planning where a central hospital serves the widest area. Requires no extra user input and is easy to explain.
@@ -624,7 +625,9 @@ All core Python files have been written. Below is a record of what each file con
 - `CityGraph(rows, cols)` — initialises all nodes as Empty with riskIndex=1.0, builds full 4-directional edge grid
 - Edge costs: 0.8 if either endpoint is Residential, else 1.0. Updated via `setNodeType`.
 - `edgeKey(nodeA, nodeB)` — module-level canonical key function (smaller node first)
-- All public methods match spec: `setNodeType`, `getNeighbours`, `getAccessibleNeighbours`, `getEdgeCost`, `getWeightedCost`, `floodEdge`, `unfloodEdge`, `isEdgeBlocked`, `setRiskIndex`, `setAccessible`, `getAllNodes`, `getAccessibleNodes`, `getNodesByType`, `getAllEdges`, `reset`
+- Edges now carry a `"built"` boolean, set `False` by default and marked `True` for MST + route edges by `setBuiltEdges()`.
+- `getNeighbours` and `getAccessibleNeighbours` accept an optional `builtOnly` parameter to restrict traversal to the constructed road network.
+- All public methods match spec: `setNodeType`, `getNeighbours`, `getAccessibleNeighbours`, `getEdgeCost`, `getWeightedCost`, `floodEdge`, `unfloodEdge`, `isEdgeBlocked`, `setRiskIndex`, `setAccessible`, `getAllNodes`, `getAccessibleNodes`, `getNodesByType`, `getAllEdges`, `reset`, `setBuiltEdges`
 
 ### `csp.py`
 - `runCSP(graph, buildingCounts)` — public entry point, returns `(True, None)` or `(False, conflictInfo)`
@@ -635,11 +638,12 @@ All core Python files have been written. Below is a record of what each file con
 - BFS uses `graph.getNeighbours` (not accessible version — layout phase ignores flooding)
 
 ### `mst.py`
-- `buildRoadNetwork(graph)` — public entry point, returns `(routeA, routeB)` as lists of canonical edge tuples
+- `buildRoadNetwork(graph)` — public entry point, returns `(routeA, routeB, events)` as lists of canonical edge tuples
 - `pickCentreNode` — designates Primary Hospital and Primary Depot (closest to grid centre, tiebreaker row then col)
 - `buildMST` — Kruskal's with Union-Find (path compression + union by rank), stops at numNodes-1 edges
-- `astarPath` — local A* for route finding, uses Manhattan distance, respects `graph.isEdgeBlocked`
+- `astarPath` — local A* for route finding, uses Manhattan distance, respects `graph.isEdgeBlocked` and the edge `"built"` flag
 - Route A edges are blocked via `graph.floodEdge()` before Route B search, then restored via `graph.unfloodEdge()`
+- Marks MST + Route A + Route B edges as built on the graph via `graph.setBuiltEdges()` so downstream routing modules (GA, A*) only traverse the constructed road network.
 
 ### `crime.py`
 - `runCrime(graph)` — public entry point, writes riskIndex to every node via `graph.setRiskIndex`
@@ -653,7 +657,7 @@ All core Python files have been written. Below is a record of what each file con
 - `runGA(graph)` — public entry point, writes and returns `graph.ambulancePositions`
 - `dijkstra(graph, source)` — returns distance dict using `getWeightedCost` and `getAccessibleNeighbours`
 - Fitness = max(min distance from any node to nearest ambulance) — Dijkstra-based, not BFS
-- Population=50, Generations=100, Mutation rate=10%, Elitism keeps top 25
+- Population=30, Generations=60, Mutation rate=10%, Elitism keeps top 15
 - `fixDuplicates` — replaces duplicate nodes using a pre-collected full position set (not just seen-so-far)
 - GA runs once before simulation, does NOT re-run during steps
 
@@ -667,8 +671,9 @@ All core Python files have been written. Below is a record of what each file con
 ### `simulation.py`
 - `Simulation(graph, buildingCounts, floodProbability=0.30)` class
 - `setup()` — runs CSP → MST → crime → GA → A* in order, returns `(cspSuccess, cspConflict)`
-- `step()` — flood check (30% random edge) → advance medical team → ambulance accessibility check. Returns list of event strings.
-- `autoRun(onStepCallback)` — runs all remaining steps
+- `step()` — risk shift check (every 5 steps) with greedy ambulance reposition → flood check (30% random edge) → advance medical team → ambulance accessibility check. Returns list of event strings.
+- `_maybeShiftRisk()` — periodic crime wave: bumps riskIndex on 3 random non-empty nodes by +0.25
+- `_greedyAmbulanceReposition()` — local hill-climb: each ambulance moves to a neighbour if it improves worst-case coverage
 - Ambulance relocation: if node inaccessible, greedy-move to first accessible neighbour
 
 ### `eventLog.py`

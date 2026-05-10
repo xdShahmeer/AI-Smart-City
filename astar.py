@@ -44,7 +44,7 @@ def findPath(graph, start, goal):
         if current == goal:
             return reconstructPath(cameFrom, current)
 
-        for neighbour in graph.getAccessibleNeighbours(current):
+        for neighbour in graph.getAccessibleNeighbours(current, builtOnly=True):
             edgeCost = graph.getWeightedCost(current, neighbour)
             if edgeCost == float('inf'):
                 continue
