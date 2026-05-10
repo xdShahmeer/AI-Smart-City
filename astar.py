@@ -1,6 +1,9 @@
 import heapq
 import random
 
+# minimum edge cost used by the heuristic to keep it admissible
+from cityGraph import RESIDENTIAL_COST
+
 
 # civilians at start
 NUM_INITIAL_CIVILIANS = 5
@@ -9,7 +12,9 @@ NUM_INITIAL_CIVILIANS = 5
 # helpers
 
 def manhattanDistance(nodeA, nodeB):
-    return abs(nodeA[0] - nodeB[0]) + abs(nodeA[1] - nodeB[1])
+    # scaled by the cheapest edge cost so the heuristic never overestimates.
+    # without this, 0.8-cost residential edges would break admissibility.
+    return RESIDENTIAL_COST * (abs(nodeA[0] - nodeB[0]) + abs(nodeA[1] - nodeB[1]))
 
 
 def reconstructPath(cameFrom, current):
@@ -66,13 +71,20 @@ class RouterState:
         self.reached       = []   # reached civilians
 
     def _generateCivilians(self, graph):
-        # pick nearby civilians
+        # pick civilians only on nodes reachable through the built road network.
+        # using getAccessibleNodes() without a connectivity check would place
+        # civilians on nodes the medical team can never reach.
         candidates = []
         for node in graph.getAccessibleNodes():
-            if node != graph.primaryHospital:
+            if node == graph.primaryHospital:
+                continue
+            path = findPath(graph, graph.primaryHospital, node)
+            if len(path) > 0:
                 candidates.append(node)
 
         howMany = min(NUM_INITIAL_CIVILIANS, len(candidates))
+        if howMany == 0:
+            return []
         return random.sample(candidates, howMany)
 
 

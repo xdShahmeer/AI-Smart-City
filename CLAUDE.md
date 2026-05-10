@@ -45,9 +45,10 @@ Live record of where the project stands. Update this at the end of every session
 - [x] **Manual flood tool** — Mouse Tool radio "Flood": two-click adjacent cells to flood the connecting road, with a blue selection ring after the first click
 - [x] **Emergency toggle tool** — Mouse Tool radio "Emergency": click any accessible node to append a civilian to the medical team's queue
 - [x] **Active emergency markers** — pending civilians render as red `!` rings on the grid
-- [x] **Crime heatmap** — proper green → yellow → red gradient over `riskIndex` ∈ [1.0, 2.5] (no more solid bands)
+- [x] **Crime heatmap** — proper green → yellow → red gradient over `riskIndex` ∈ [1.0, 3.0] (no more solid bands)
 - [x] **Coverage overlay** — multi-source weighted Dijkstra distances via `AppController.getCoverageDistances()`; recomputes every render so floods reflect immediately
-- [x] **Ambulance icon** — white square + red cross (reads as a medical vehicle without needing a sprite asset)
+- [x] **Ambulance icon** — `ambulance.png` sprite loaded from assets; falls back to drawn cross if missing
+- [x] **Medical team icon** — `medical_team.png` sprite loaded from assets; falls back to cyan MED square if missing
 - [x] **Controller surface for manual interactions** — `floodEdge`, `addEmergency`, `getActiveEmergencies`, `getCoverageDistances` on `AppController`; the UI never reaches into `Simulation` or `CityGraph` for these operations
 - [x] **Three-column layout** — left = status bar + city grid, middle = controls (Settings, Constraints, Mouse Tool, Overlays, Node Info), right = Legend + event log. The log is visible the moment the window opens.
 - [x] **Dynamic cell size** — `_computeCellSize` targets a ~600 px canvas; the canvas + sprites resize on Generate, and the Tk root re-snaps to its natural size with `geometry("")` so other panels never get cropped or overlapped.
@@ -231,6 +232,7 @@ Suggested ranges (adjust if needed):
 {
     "cost": float,        # base cost: 1.0 standard, 0.8 if either endpoint is Residential
     "blocked": bool,      # True if flooded
+    "built": bool,        # True if this edge is part of the MST + route network
 }
 ```
 
@@ -532,7 +534,7 @@ Three toggleable overlays drawn on top of the grid in Pygame:
 
 | Toggle | What it shows |
 |---|---|
-| Road Network | Color-coded roads: white = standard, yellow = residential (discounted), blue = flooded |
+| Road Network | Color-coded roads: white = standard, yellow = residential (discounted), blue = flooded, dark grey = non-built grid connection |
 | Ambulance Coverage | Heatmap shading per node: darker = farther from nearest ambulance (Dijkstra distances) |
 | Crime Risk Heatmap | Red = High, Orange = Medium, Green = Low |
 
@@ -627,7 +629,7 @@ All core Python files have been written. Below is a record of what each file con
 - `edgeKey(nodeA, nodeB)` — module-level canonical key function (smaller node first)
 - Edges now carry a `"built"` boolean, set `False` by default and marked `True` for MST + route edges by `setBuiltEdges()`.
 - `getNeighbours` and `getAccessibleNeighbours` accept an optional `builtOnly` parameter to restrict traversal to the constructed road network.
-- All public methods match spec: `setNodeType`, `getNeighbours`, `getAccessibleNeighbours`, `getEdgeCost`, `getWeightedCost`, `floodEdge`, `unfloodEdge`, `isEdgeBlocked`, `setRiskIndex`, `setAccessible`, `getAllNodes`, `getAccessibleNodes`, `getNodesByType`, `getAllEdges`, `reset`, `setBuiltEdges`
+- All public methods match spec: `setNodeType`, `getNeighbours`, `getAccessibleNeighbours`, `getEdgeCost`, `getWeightedCost`, `floodEdge`, `unfloodEdge`, `isEdgeBlocked`, `isEdgeBuilt`, `setRiskIndex`, `setAccessible`, `getAllNodes`, `getAccessibleNodes`, `getNodesByType`, `getAllEdges`, `reset`, `setBuiltEdges`
 
 ### `csp.py`
 - `runCSP(graph, buildingCounts)` — public entry point, returns `(True, None)` or `(False, conflictInfo)`

@@ -25,6 +25,9 @@ GROUND_VARIETY = ["grass", "wavy_grass", "flower_ground", "stoned_grass"]
 # ambulance sprite
 AMBULANCE_SPRITE = "ambulance"
 
+# medical team sprite
+MEDICAL_TEAM_SPRITE = "medical_team"
+
 # tree strip
 TREE_SPRITE_FILE  = "spr_tree_animated"
 TREE_FRAME_WIDTH  = 64
@@ -159,11 +162,12 @@ class AppUI:
         self._industrialAdjacencyVar = None
 
         # sprite cache
-        self._buildingSprites = {}
-        self._groundSprites   = []
-        self._ambulanceSprite = None
-        self._treeFrames      = []
-        self._treeFrameIndex  = 0
+        self._buildingSprites   = {}
+        self._groundSprites     = []
+        self._ambulanceSprite   = None
+        self._medicalTeamSprite = None
+        self._treeFrames        = []
+        self._treeFrameIndex    = 0
 
     # public lifecycle
 
@@ -527,6 +531,14 @@ class AppUI:
             ambulanceIconSize = 12
         self._ambulanceSprite = self._loadSquareSprite(
             assetsDir, AMBULANCE_SPRITE, ambulanceIconSize
+        )
+
+        # medical team sprite
+        medTeamIconSize = self._cellSize // 2
+        if medTeamIconSize < 12:
+            medTeamIconSize = 12
+        self._medicalTeamSprite = self._loadSquareSprite(
+            assetsDir, MEDICAL_TEAM_SPRITE, medTeamIconSize
         )
 
         # tree frames
@@ -913,20 +925,20 @@ class AppUI:
         return COLOURS.get(data["type"], COLOURS["Empty"])
 
     def _crimeGradient(self, riskIndex):
-        # crime colour scale
+        # crime colour scale over [1.0, 3.0] to match risk-shift range
         if riskIndex < 1.0:
             risk = 1.0
-        elif riskIndex > 2.5:
-            risk = 2.5
+        elif riskIndex > 3.0:
+            risk = 3.0
         else:
             risk = riskIndex
 
-        if risk <= 1.75:
-            progress = (risk - 1.0) / 0.75
+        if risk <= 2.0:
+            progress = (risk - 1.0) / 1.0
             redValue   = int(255 * progress)
             greenValue = 200
         else:
-            progress = (risk - 1.75) / 0.75
+            progress = (risk - 2.0) / 1.0
             redValue   = 255
             greenValue = int(200 * (1.0 - progress))
 
@@ -1130,12 +1142,18 @@ class AppUI:
         )
 
     def _drawMedicalTeam(self):
-        # draw medical team
+        # draw medical team with sprite fallback
         state = self._controller.getRouterState()
         if state is None or state.currentPos is None:
             return
 
         centreX, centreY = self._nodeCentre(state.currentPos)
+
+        if self._medicalTeamSprite is not None:
+            self._canvas.create_image(
+                centreX, centreY, anchor=tk.CENTER, image=self._medicalTeamSprite
+            )
+            return
 
         size = self._cellSize // 3
         if size < 10:

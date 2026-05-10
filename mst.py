@@ -61,14 +61,9 @@ def astarPath(graph, start, goal, builtOnly=True):
             continue
         bestG[current] = gScore
 
-        for neighbour in graph.getNeighbours(current):
+        for neighbour in graph.getNeighbours(current, builtOnly=builtOnly):
             if graph.isEdgeBlocked(current, neighbour):
                 continue
-            # use built edges only when asked
-            if builtOnly:
-                key = edgeKey(current, neighbour)
-                if not graph.edges[key].get("built", False):
-                    continue
             edgeCost = graph.getEdgeCost(current, neighbour)
             newG     = gScore + edgeCost
 

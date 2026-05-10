@@ -99,7 +99,9 @@ def fixDuplicates(chromosome, graph):
             seen.add(replacement)
             fixed.append(replacement)
         else:
-            fixed.append(position)
+            # all accessible nodes saturated -- pick any random one
+            replacement = random.choice(accessibleNodes)
+            fixed.append(replacement)
 
     return fixed
 

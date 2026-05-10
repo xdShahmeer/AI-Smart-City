@@ -291,7 +291,11 @@ def sortByPlacementPriority(buildingList):
 def runCSP(graph, buildingCounts, residentialHops=None, powerplantHops=None,
            industrialAdjacencyRule=None):
     # place buildings with csp
+    # save globals so overrides do not leak across runs
     global RESIDENTIAL_MAX_HOPS, POWERPLANT_MAX_HOPS, INDUSTRIAL_ADJACENCY_RULE
+    savedResidential = RESIDENTIAL_MAX_HOPS
+    savedPowerplant  = POWERPLANT_MAX_HOPS
+    savedIndustrial  = INDUSTRIAL_ADJACENCY_RULE
     if residentialHops is not None:
         RESIDENTIAL_MAX_HOPS = residentialHops
     if powerplantHops is not None:
@@ -310,6 +314,11 @@ def runCSP(graph, buildingCounts, residentialHops=None, powerplantHops=None,
 
     assignment = {}
     success    = backtrack(graph, buildingList, assignment)
+
+    # restore globals so defaults work on next run
+    RESIDENTIAL_MAX_HOPS = savedResidential
+    POWERPLANT_MAX_HOPS  = savedPowerplant
+    INDUSTRIAL_ADJACENCY_RULE = savedIndustrial
 
     if success:
         return (True, None)

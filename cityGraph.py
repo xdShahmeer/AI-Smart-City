@@ -60,9 +60,9 @@ class CityGraph:
         for row in range(self.rows):
             for col in range(self.cols):
                 node = (row, col)
-                self._connectFourDirections(node, row, col)
+                self._connectNeighbours(node, row, col)
 
-    def _connectFourDirections(self, node, row, col):
+    def _connectNeighbours(self, node, row, col):
         # four directions
         directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
@@ -101,11 +101,13 @@ class CityGraph:
 
     def floodEdge(self, nodeA, nodeB):
         key = edgeKey(nodeA, nodeB)
-        self.edges[key]["blocked"] = True
+        if key in self.edges:
+            self.edges[key]["blocked"] = True
 
     def unfloodEdge(self, nodeA, nodeB):
         key = edgeKey(nodeA, nodeB)
-        self.edges[key]["blocked"] = False
+        if key in self.edges:
+            self.edges[key]["blocked"] = False
 
     def reset(self, rows=None, cols=None):
         if rows is not None:
@@ -170,7 +172,9 @@ class CityGraph:
         # only open neighbours
         result = []
         for neighbour in self.adjList[node]:
-            key         = edgeKey(node, neighbour)
+            key = edgeKey(node, neighbour)
+            if key not in self.edges:
+                continue
             edgeBlocked = self.edges[key]["blocked"]
             nodeOk      = self.nodes[neighbour]["accessible"]
             if builtOnly and not self.edges[key]["built"]:
@@ -180,7 +184,9 @@ class CityGraph:
         return result
 
     def getEdgeCost(self, nodeA, nodeB):
-        key  = edgeKey(nodeA, nodeB)
+        key = edgeKey(nodeA, nodeB)
+        if key not in self.edges:
+            return float('inf')
         edge = self.edges[key]
         if edge["blocked"]:
             return float('inf')
@@ -195,7 +201,15 @@ class CityGraph:
 
     def isEdgeBlocked(self, nodeA, nodeB):
         key = edgeKey(nodeA, nodeB)
+        if key not in self.edges:
+            return True
         return self.edges[key]["blocked"]
+
+    def isEdgeBuilt(self, nodeA, nodeB):
+        key = edgeKey(nodeA, nodeB)
+        if key not in self.edges:
+            return False
+        return self.edges[key]["built"]
 
     def getAllNodes(self):
         return list(self.nodes.keys())
