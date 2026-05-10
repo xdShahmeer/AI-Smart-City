@@ -2,8 +2,7 @@ import random
 from collections import defaultdict
 
 
-# Population ranges per building type. The graph generator picks a random
-# integer inside the range when a node is assigned a type.
+# population ranges per type
 POPULATION_RANGES = {
     "Residential":    (50,  200),
     "School":         (100, 400),
@@ -14,13 +13,13 @@ POPULATION_RANGES = {
     "Empty":          (0,   0),
 }
 
-# Standard road cost and the discounted cost when one endpoint is Residential.
+# road costs
 STANDARD_COST    = 1.0
 RESIDENTIAL_COST = 0.8
 
 
 def edgeKey(nodeA, nodeB):
-    # Canonical (smaller, larger) ordering so each edge is stored once.
+    # keep edge order stable
     if nodeA < nodeB:
         return (nodeA, nodeB)
     return (nodeB, nodeA)
@@ -31,7 +30,7 @@ class CityGraph:
         self.rows = rows
         self.cols = cols
 
-        # Set by other modules during setup
+        # set by other modules
         self.primaryHospital    = None
         self.primaryDepot       = None
         self.ambulancePositions = []
@@ -41,12 +40,12 @@ class CityGraph:
         self._buildGrid()
 
     def _buildGrid(self):
-        # Create every node, then connect each one to its 4-direction neighbours.
+        # build nodes then connect neighbours
         self.nodes   = {}
         self.edges   = {}
         self.adjList = defaultdict(list)
 
-        # Step 1: create the node dictionary
+        # create nodes
         for row in range(self.rows):
             for col in range(self.cols):
                 node = (row, col)
@@ -57,21 +56,21 @@ class CityGraph:
                     "accessible": True,
                 }
 
-        # Step 2: connect each node to its up/down/left/right neighbour
+        # connect four directions
         for row in range(self.rows):
             for col in range(self.cols):
                 node = (row, col)
                 self._connectFourDirections(node, row, col)
 
     def _connectFourDirections(self, node, row, col):
-        # The four cardinal directions: up, down, left, right.
+        # four directions
         directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
         for deltaRow, deltaCol in directions:
             newRow = row + deltaRow
             newCol = col + deltaCol
 
-            # Skip directions that fall off the grid
+            # skip out of range cells
             if newRow < 0 or newRow >= self.rows:
                 continue
             if newCol < 0 or newCol >= self.cols:
@@ -80,7 +79,7 @@ class CityGraph:
             neighbour = (newRow, newCol)
             key       = edgeKey(node, neighbour)
 
-            # Add the edge if we have not already stored it
+            # add edge once
             if key not in self.edges:
                 self.edges[key] = {
                     "cost":    self._calcCost(node, neighbour),
@@ -88,12 +87,12 @@ class CityGraph:
                     "built":   False,
                 }
 
-            # Add the neighbour to the adjacency list (no duplicates)
+            # add neighbour once
             if neighbour not in self.adjList[node]:
                 self.adjList[node].append(neighbour)
 
     def _calcCost(self, nodeA, nodeB):
-        # Discounted cost if either endpoint is a Residential node.
+        # residential road cost
         typeA = self.nodes[nodeA]["type"]
         typeB = self.nodes[nodeB]["type"]
         if typeA == "Residential" or typeB == "Residential":
@@ -109,7 +108,6 @@ class CityGraph:
         self.edges[key]["blocked"] = False
 
     def reset(self, rows=None, cols=None):
-        # Clears every node, every edge, and the per-module placeholders.
         if rows is not None:
             self.rows = rows
         if cols is not None:
@@ -123,13 +121,10 @@ class CityGraph:
 
         self._buildGrid()
 
-    # ------------------------------------------------------------------ #
-    #  Setters                                                             #
-    # ------------------------------------------------------------------ #
+    # setters
 
     def setNodeType(self, node, buildingType):
-        # Assign the node's type, draw a random population from its range, and
-        # recalculate the cost of every edge that touches this node.
+        # set type pop and edge cost
         lowPop, highPop = POPULATION_RANGES[buildingType]
         if lowPop == highPop:
             populationValue = 0
@@ -150,22 +145,17 @@ class CityGraph:
         self.nodes[node]["accessible"] = accessible
 
     def setBuiltEdges(self, builtEdges):
-        # Mark every edge in this list as built. Downstream routing modules
-        # (GA, A*) only traverse edges with built=True when using builtOnly.
+        # mark built edges
         self.builtEdges = list(builtEdges)
         for nodeA, nodeB in builtEdges:
             key = edgeKey(nodeA, nodeB)
             if key in self.edges:
                 self.edges[key]["built"] = True
 
-    # ------------------------------------------------------------------ #
-    #  Getters                                                             #
-    # ------------------------------------------------------------------ #
+    # getters
 
     def getNeighbours(self, node, builtOnly=False):
-        # All 4-direction neighbours. When builtOnly is True, only edges
-        # that have been marked as built (by the MST + routes) are returned.
-        # The CSP uses builtOnly=False because it runs before the MST exists.
+        # all neighbours or built ones only
         neighbours = list(self.adjList[node])
         if not builtOnly:
             return neighbours
@@ -177,9 +167,7 @@ class CityGraph:
         return result
 
     def getAccessibleNeighbours(self, node, builtOnly=False):
-        # Only neighbours reachable through an unblocked edge whose target
-        # node is also still accessible. When builtOnly is True, the edge
-        # must also be marked as built by the MST/route phase.
+        # only open neighbours
         result = []
         for neighbour in self.adjList[node]:
             key         = edgeKey(node, neighbour)
@@ -199,7 +187,7 @@ class CityGraph:
         return edge["cost"]
 
     def getWeightedCost(self, nodeA, nodeB):
-        # Base cost multiplied by the destination node's crime risk index.
+        # road cost times risk
         baseCost = self.getEdgeCost(nodeA, nodeB)
         if baseCost == float('inf'):
             return float('inf')

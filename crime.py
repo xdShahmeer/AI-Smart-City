@@ -5,26 +5,23 @@ from sklearn.cluster import KMeans
 from sklearn.neighbors import KNeighborsClassifier
 
 
-# Predicted risk level -> riskIndex multiplier written into the graph.
+# risk index map
 RISK_INDEX_MAP = {
     "High":   2.5,
     "Medium": 1.75,
     "Low":    1.25,
 }
 
-# Risk tiers in the order we want them displayed.
+# risk tier order
 RISK_TIERS = ("High", "Medium", "Low")
 
 
-# ── Feature extraction ───────────────────────────────────────────────────────
+# feature extraction
 
 def getProximityToIndustrial(graph, node):
-    # BFS from this node, count hops to the nearest Industrial node.
-    # Uses getNeighbours (no accessibility filter) because this runs during
-    # the layout phase, before any flooding takes place.
     industrialSet = set(graph.getNodesByType("Industrial"))
 
-    # No industrial zones exist -- return a large default distance.
+    # no industrial nodes
     if len(industrialSet) == 0:
         return graph.rows + graph.cols
 
@@ -43,13 +40,11 @@ def getProximityToIndustrial(graph, node):
                 visited.add(neighbour)
                 queue.append((neighbour, hops + 1))
 
-    # Industrial zones exist but are somehow unreachable from this node.
+    # no path found
     return graph.rows + graph.cols
 
 
 def extractFeatures(graph):
-    # Returns the ordered list of nodes and a numpy array of features.
-    # Each row is [population, proximityToIndustrial].
     allNodes = graph.getAllNodes()
 
     featureRows = []
@@ -61,27 +56,21 @@ def extractFeatures(graph):
     return allNodes, np.array(featureRows, dtype=float)
 
 
-# ── Stage 1: K-Means clustering (unsupervised) ────────────────────────────────
+# stage 1 k means
 
 def runKMeans(featureMatrix):
-    # Fit K-Means with k = 3 (one per risk tier).
     model = KMeans(n_clusters=3, random_state=42, n_init=10)
     model.fit(featureMatrix)
     return model.labels_, model.cluster_centers_
 
 
 def assignClusterRiskLabels(clusterCentres):
-    # Decide which cluster id maps to High / Medium / Low. The cluster with
-    # the highest average population density is High, the lowest is Low,
-    # the remaining one is Medium.
-
-    # Build a list of (clusterId, populationDensity) so we can sort it.
+    # map clusters to labels
     populationByCluster = []
     for clusterId in range(len(clusterCentres)):
         populationDensity = clusterCentres[clusterId][0]
         populationByCluster.append((clusterId, populationDensity))
 
-    # Sort highest-population first (descending).
     populationByCluster.sort(key=getClusterPopulation, reverse=True)
 
     highCluster   = populationByCluster[0][0]
@@ -97,17 +86,12 @@ def assignClusterRiskLabels(clusterCentres):
 
 
 def getClusterPopulation(clusterEntry):
-    # Helper used by sort() above; replaces a lambda for clarity.
     return clusterEntry[1]
 
 
-# ── Stage 2: synthetic dataset generation ─────────────────────────────────────
+# stage 2 synthetic labels
 
 def generateSyntheticLabels(featureMatrix):
-    # Score each node with the formula, normalise to [0, 1], apply thresholds.
-    # score = (population * 0.6) + (proximityWeight * 0.4)
-    # where proximityWeight = 1 / (proximityToIndustrial + 1) so closer-to-
-    # Industrial nodes score higher.
     populationColumn = featureMatrix[:, 0]
     proximityColumn  = featureMatrix[:, 1]
 
@@ -116,7 +100,6 @@ def generateSyntheticLabels(featureMatrix):
 
     maxScore = rawScores.max()
     if maxScore == 0:
-        # Degenerate case -- everything is zero, label everything Low.
         normalisedScores = rawScores
     else:
         normalisedScores = rawScores / maxScore
@@ -133,7 +116,7 @@ def generateSyntheticLabels(featureMatrix):
     return labels
 
 
-# ── Stage 3: KNN classifier (supervised) ──────────────────────────────────────
+# stage 3 knn
 
 def trainKNN(featureMatrix, labels):
     model = KNeighborsClassifier(n_neighbors=5)
@@ -141,10 +124,9 @@ def trainKNN(featureMatrix, labels):
     return model
 
 
-# ── Cross-validation between Stage 1 and Stage 2 ──────────────────────────────
+# stage compare
 
 def countAgreement(kmeansLabels, syntheticLabels):
-    # How many positions have the same label in both lists?
     agreeCount = 0
     for index in range(len(kmeansLabels)):
         if kmeansLabels[index] == syntheticLabels[index]:
@@ -153,8 +135,6 @@ def countAgreement(kmeansLabels, syntheticLabels):
 
 
 def countByTier(labelList):
-    # Plain loop in place of a dict comprehension. Returns counts in
-    # tier order: High first, then Medium, then Low.
     counts = {}
     for tier in RISK_TIERS:
         counts[tier] = 0
@@ -164,21 +144,15 @@ def countByTier(labelList):
     return counts
 
 
-# ── Pipeline entry point ──────────────────────────────────────────────────────
+# pipeline entry
 
 def runCrime(graph):
-    # Stage 1 -> Stage 2 -> Stage 3 pipeline:
-    #   Stage 1 (unsupervised)  -- K-Means discovers natural risk clusters.
-    #   Stage 2 (synthetic data) -- formula assigns High/Medium/Low per node.
-    #   Stage 3 (supervised)    -- KNN trains on Stage 2 labels and predicts.
-    # K-Means is then cross-checked against the formula labels and the result
-    # is logged so the unsupervised step has a visible role.
-    # Returns a list of event strings for the caller to forward to the UI.
+    # run the full risk pipeline
     events = []
 
     allNodes, featureMatrix = extractFeatures(graph)
 
-    # Stage 1
+    # stage 1
     clusterLabels, clusterCentres = runKMeans(featureMatrix)
     clusterToLabel                = assignClusterRiskLabels(clusterCentres)
 
@@ -186,10 +160,10 @@ def runCrime(graph):
     for clusterId in clusterLabels:
         kmeansLabels.append(clusterToLabel[clusterId])
 
-    # Stage 2
+    # stage 2
     syntheticLabels = generateSyntheticLabels(featureMatrix)
 
-    # Cross-validation log entries
+    # compare stages
     if len(kmeansLabels) > 0:
         agreeCount = countAgreement(kmeansLabels, syntheticLabels)
         percentage = agreeCount / len(kmeansLabels) * 100
@@ -205,11 +179,11 @@ def runCrime(graph):
             f"Low={clusterCounts['Low']}."
         )
 
-    # Stage 3
+    # stage 3
     knn         = trainKNN(featureMatrix, syntheticLabels)
     predictions = knn.predict(featureMatrix)
 
-    # Write the predicted risk index back into the graph for every node
+    # write risk back to graph
     for index in range(len(allNodes)):
         node           = allNodes[index]
         predictedLabel = predictions[index]
@@ -218,20 +192,14 @@ def runCrime(graph):
     return events
 
 
-# ── Police officer deployment ─────────────────────────────────────────────────
+# police deployment
 
 def riskIndexFor(graph, node):
-    # Helper used by sort() to replace a lambda.
     return graph.nodes[node]["riskIndex"]
 
 
 def deployPoliceOfficers(graph, count=10):
-    # Greedy top-`count` placement: highest predicted risk goes first.
-    # Reflects the project statement framing of allocating 10 officers to the
-    # neighborhoods most likely to need them.
-
-    # We need a partial sort by riskIndex descending. The standard library
-    # sort with a small named helper is the simplest readable approach.
+    # pick top risk nodes
     allNodes = graph.getAllNodes()
     sortedByRisk = list(allNodes)
 

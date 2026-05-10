@@ -16,7 +16,7 @@ def main():
     controller = AppController(DEFAULT_BUILDINGS, gridSize=10, floodProbability=0.30)
     appUI      = AppUI(controller)
 
-    # Wire the controller's events into the UI's event log
+    # connect events to log
     controller.setEventListener(appUI.addLog)
 
     appUI.setup()

@@ -4,24 +4,23 @@ import math
 from cityGraph import edgeKey
 
 
-# ── Union-Find helpers for Kruskal's algorithm ────────────────────────────────
+# union find helpers
 
 def findRoot(parent, node):
-    # Path compression: every visited node points directly to the root.
+    # path compression keeps the root direct
     if parent[node] != node:
         parent[node] = findRoot(parent, parent[node])
     return parent[node]
 
 
 def unionByRank(parent, rank, nodeA, nodeB):
-    # Union by rank: attach the smaller tree under the larger root.
     rootA = findRoot(parent, nodeA)
     rootB = findRoot(parent, nodeB)
 
     if rootA == rootB:
-        return False   # already in the same component
+        return False
 
-    # Make sure rootA is the larger of the two
+    # keep the bigger tree as root
     if rank[rootA] < rank[rootB]:
         rootA, rootB = rootB, rootA
 
@@ -31,25 +30,24 @@ def unionByRank(parent, rank, nodeA, nodeB):
     return True
 
 
-# ── A* search (base costs only, no crime multiplier) ──────────────────────────
+# a star search
 
 def manhattanDistance(nodeA, nodeB):
     return abs(nodeA[0] - nodeB[0]) + abs(nodeA[1] - nodeB[1])
 
 
 def astarPath(graph, start, goal, builtOnly=True):
-    # Returns the ordered list of nodes from start to goal, or [] if no path.
-    # Respects blocked edges so a temporarily blocked Route A is avoided.
-    # When builtOnly is True, only edges marked as built are traversable.
-    # Route B passes builtOnly=False because it adds new roads beyond the MST.
+    # return nodes from start to goal
+    # skip blocked edges
+    # built only uses built edges
     if start == goal:
         return [start]
 
-    # Priority queue entries: (fScore, gScore, node, pathSoFar)
+    # queue items fscore gscore node path
     openSet = []
     heapq.heappush(openSet, (manhattanDistance(start, goal), 0, start, [start]))
 
-    # Best gScore seen for each node
+    # best g score per node
     bestG = {}
 
     while openSet:
@@ -58,7 +56,7 @@ def astarPath(graph, start, goal, builtOnly=True):
         if current == goal:
             return path
 
-        # Skip if a cheaper route to this node was already processed
+        # skip if a better route was seen
         if current in bestG and bestG[current] <= gScore:
             continue
         bestG[current] = gScore
@@ -66,8 +64,7 @@ def astarPath(graph, start, goal, builtOnly=True):
         for neighbour in graph.getNeighbours(current):
             if graph.isEdgeBlocked(current, neighbour):
                 continue
-            # Only traverse built edges when requested (Route A uses this;
-            # Route B searches the full grid edge set to find an independent path).
+            # use built edges only when asked
             if builtOnly:
                 key = edgeKey(current, neighbour)
                 if not graph.edges[key].get("built", False):
@@ -84,11 +81,10 @@ def astarPath(graph, start, goal, builtOnly=True):
     return []
 
 
-# ── Primary node selection ────────────────────────────────────────────────────
+# primary node selection
 
 def pickCentreNode(nodeList, rows, cols):
-    # Return the node closest to the geometric centre of the grid. Ties are
-    # broken by lower row first, then lower col, so the choice is deterministic.
+    # pick the node nearest to the grid centre
     centreRow = rows / 2.0
     centreCol = cols / 2.0
 
@@ -103,7 +99,7 @@ def pickCentreNode(nodeList, rows, cols):
             (nodeRow - centreRow) ** 2 + (nodeCol - centreCol) ** 2
         )
 
-        # Pick this node if it is closer, OR equally close but rows/cols smaller
+        # pick closer nodes first
         replace = False
         if distance < bestDistance:
             replace = True
@@ -122,15 +118,13 @@ def pickCentreNode(nodeList, rows, cols):
     return bestNode
 
 
-# ── Kruskal's MST ─────────────────────────────────────────────────────────────
+# kruskals mst
 
 def buildMST(graph):
-    # Returns the list of edge tuples (nodeA, nodeB) that form the MST.
     allNodes = graph.getAllNodes()
     allEdges = graph.getAllEdges()
 
-    # Sort the edges by their cost (ascending). Using a plain helper instead
-    # of `key=lambda e: graph.edges[e]["cost"]` keeps the intent explicit.
+    # sort edges by cost
     sortedEdges = list(allEdges)
     sortByEdgeCost(sortedEdges, graph)
 
@@ -154,26 +148,20 @@ def buildMST(graph):
 
 
 def sortByEdgeCost(edgeList, graph):
-    # Insertion sort would be too slow for a 30x30 grid (~3600 edges), so we
-    # build a key list and use the standard sort. Defining `keyFor` as a
-    # named function avoids the lambda.
+    # use a small named key helper
     def keyFor(edge):
         return graph.edges[edge]["cost"]
     edgeList.sort(key=keyFor)
 
 
-# ── Public entry point ────────────────────────────────────────────────────────
+# public entry point
 
 def buildRoadNetwork(graph):
-    # Designates Primary Hospital and Primary Depot, builds Kruskal's MST,
-    # then adds two independent emergency routes via A*.
-    #
-    # Returns (routeA, routeB, events). Each route is a list of canonical
-    # (nodeA, nodeB) edge tuples. `events` is a list of log strings the
-    # caller forwards to the UI event log.
+    # pick main nodes then build mst and routes
+    # return routea routeb and events
     events = []
 
-    # Step 1: designate the Primary Hospital and Primary Depot
+    # pick main hospital and depot
     hospitals = graph.getNodesByType("Hospital")
     depots    = graph.getNodesByType("AmbulanceDepot")
 
@@ -194,9 +182,7 @@ def buildRoadNetwork(graph):
     events.append(f"[MST] Primary Hospital: {graph.primaryHospital}")
     events.append(f"[MST] Primary Depot:    {graph.primaryDepot}")
 
-    # Step 2: build the MST and mark those edges as the base built road network.
-    # The downstream A* route searches will only traverse built edges, so Route A
-    # and Route B are guaranteed to stay on the constructed network.
+    # build the mst and mark built edges
     mstEdges = buildMST(graph)
     graph.setBuiltEdges(mstEdges)
     events.append(
@@ -204,7 +190,7 @@ def buildRoadNetwork(graph):
         f"{len(graph.getAllNodes())} nodes."
     )
 
-    # Step 3a: find Route A via A* (traverses only built MST edges)
+    # find route a on built edges
     pathA = astarPath(graph, graph.primaryHospital, graph.primaryDepot)
     if len(pathA) == 0:
         events.append("[MST] A* could not find Route A.")
@@ -215,19 +201,18 @@ def buildRoadNetwork(graph):
         routeA.append(edgeKey(pathA[i], pathA[i + 1]))
     events.append(f"[MST] Route A: {len(routeA)} edges, path length {len(pathA)} nodes.")
 
-    # Add Route A edges to the built network
+    # add route a to the built set
     allBuilt = list(mstEdges)
     for edge in routeA:
         if edge not in allBuilt:
             allBuilt.append(edge)
     graph.setBuiltEdges(allBuilt)
 
-    # Step 3b: temporarily block Route A so Route B is forced down a different path
+    # block route a for route b search
     for nodeA, nodeB in routeA:
         graph.floodEdge(nodeA, nodeB)
 
-    # Step 3c: find Route B via A* over all grid edges (not just built ones).
-    # Route B represents newly-built emergency roads so it can use any edge.
+    # find route b on all edges
     pathB  = astarPath(graph, graph.primaryHospital, graph.primaryDepot, builtOnly=False)
     routeB = []
     if len(pathB) > 0:
@@ -239,11 +224,11 @@ def buildRoadNetwork(graph):
     else:
         events.append("[MST] No independent Route B found -- city topology may be too constrained.")
 
-    # Step 3d: restore the Route A edges so the rest of the simulation can use them
+    # restore route a edges
     for nodeA, nodeB in routeA:
         graph.unfloodEdge(nodeA, nodeB)
 
-    # Final built set = MST + Route A + Route B
+    # final built set
     for edge in routeB:
         if edge not in allBuilt:
             allBuilt.append(edge)

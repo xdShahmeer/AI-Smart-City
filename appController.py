@@ -6,10 +6,7 @@ from ga import dijkstra
 
 
 class AppController:
-    # Mediates between the UI layer and the underlying simulation/graph.
-    # The UI talks only to the controller. The controller owns the city
-    # graph and the simulation object and forwards reads/writes through
-    # one well-defined surface.
+    # ui talks only to this class
 
     def __init__(self, defaultBuildings, gridSize=10, floodProbability=0.30):
         self._graph         = CityGraph(rows=gridSize, cols=gridSize)
@@ -18,13 +15,10 @@ class AppController:
         self._lastStepTime  = 0.0
         self._eventListener = None
 
-    # ------------------------------------------------------------------ #
-    #  Simulation control                                                  #
-    # ------------------------------------------------------------------ #
+    # simulation control
 
     def startSimulation(self, settings):
-        # Rebuild the graph from the current settings, then run the full
-        # setup pipeline (CSP, MST, crime, GA, A*). Returns the log lines.
+        # rebuild graph then run setup
         gridSize             = settings["gridSize"]
         buildingCounts       = settings["buildings"]
         floodProbability     = settings["floodProbability"]
@@ -49,7 +43,7 @@ class AppController:
         else:
             logs.append(f"CSP: {conflictInfo}")
 
-        # MST + crime modules report through the event log instead of stdout.
+        # setup logs come back as lines
         for entry in setupEvents:
             logs.append(entry)
 
@@ -59,7 +53,6 @@ class AppController:
         return logs
 
     def stepSimulation(self):
-        # Advance one step manually. Returns the events produced.
         if not self._simulation.setupDone:
             return []
         if self._simulation.isFinished():
@@ -73,8 +66,6 @@ class AppController:
         return events
 
     def autoStepIfDue(self, stepDelay):
-        # Called from the Tk main loop while auto-play is on.
-        # Fires a step only when stepDelay seconds have elapsed.
         if not self._simulation.setupDone:
             return []
         if self._simulation.isFinished():
@@ -93,7 +84,7 @@ class AppController:
         return events
 
     def resetSimulation(self, settings):
-        # Wipe graph state and re-create the simulation in a clean state.
+        # reset graph and sim
         gridSize             = settings["gridSize"]
         buildingCounts       = settings["buildings"]
         floodProbability     = settings["floodProbability"]
@@ -110,9 +101,7 @@ class AppController:
         )
         self._lastStepTime = 0.0
 
-    # ------------------------------------------------------------------ #
-    #  Event subscription                                                  #
-    # ------------------------------------------------------------------ #
+    # event subscription
 
     def _emitEvents(self, events):
         if self._eventListener is None:
@@ -120,14 +109,9 @@ class AppController:
         for entry in events:
             self._eventListener(entry)
 
-    # ------------------------------------------------------------------ #
-    #  Manual interaction (flood tool, emergency tool)                     #
-    # ------------------------------------------------------------------ #
+    # manual tools
 
     def floodEdge(self, nodeA, nodeB):
-        # Used by the manual flood tool. Validates that both endpoints share
-        # an edge, the edge is unblocked, and the simulation is set up.
-        # Returns an event string on success, None on a no-op.
         if not self._simulation.setupDone:
             return None
         if nodeB not in self._graph.getNeighbours(nodeA):
@@ -140,8 +124,6 @@ class AppController:
         return f"Manual flood: road {nodeA}-{nodeB} blocked."
 
     def addEmergency(self, node):
-        # Used by the emergency tool. Appends a node to the medical team's
-        # civilian queue so the A* router will route there in turn.
         if not self._simulation.setupDone:
             return None
 
@@ -157,29 +139,23 @@ class AppController:
 
         state.civilians.append(node)
 
-        # Simulation.isFinished() automatically extends the run while there
-        # are pending civilians, so we just need to let auto-play resume on
-        # the next tick.
+        # let auto play keep going
         self._lastStepTime = 0.0
 
         return f"Manual emergency: civilian added at {node}."
 
     def getActiveEmergencies(self):
-        # Civilians the medical team has not yet reached or skipped.
         state = self._simulation.routerState
         if state is None:
             return []
         return list(state.civilians[state.currentTarget:])
 
     def getCoverageDistances(self):
-        # Multi-source weighted Dijkstra: for every node, the minimum weighted
-        # distance to any ambulance. Mirrors the metric the GA fitness uses.
         sources = list(self._graph.ambulancePositions)
         if len(sources) == 0:
             return {}
 
-        # Initialise every node to infinity, then merge each source's distances
-        # by taking the minimum.
+        # start every node at infinity
         result = {}
         for node in self._graph.nodes:
             result[node] = float('inf')
@@ -192,9 +168,7 @@ class AppController:
 
         return result
 
-    # ------------------------------------------------------------------ #
-    #  Node info for the side panel                                        #
-    # ------------------------------------------------------------------ #
+    # node info
 
     def getNodeInfo(self, node):
         if node not in self._graph.nodes:
@@ -208,9 +182,7 @@ class AppController:
             "accessible": data["accessible"],
         }
 
-    # ------------------------------------------------------------------ #
-    #  Getters / setters                                                   #
-    # ------------------------------------------------------------------ #
+    # getters and setters
 
     def getGraph(self):
         return self._graph

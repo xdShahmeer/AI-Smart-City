@@ -2,21 +2,17 @@ import heapq
 import random
 
 
-# Number of civilians spawned at the start of the simulation. The user can
-# add more later through the Emergency tool.
+# civilians at start
 NUM_INITIAL_CIVILIANS = 5
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# helpers
 
 def manhattanDistance(nodeA, nodeB):
-    # Manhattan distance is the admissible heuristic on a 4-direction grid:
-    # the absolute row + column difference is the minimum number of steps.
     return abs(nodeA[0] - nodeB[0]) + abs(nodeA[1] - nodeB[1])
 
 
 def reconstructPath(cameFrom, current):
-    # Walk back through the cameFrom map to build the full path in order.
     path = [current]
     while current in cameFrom:
         current = cameFrom[current]
@@ -25,13 +21,10 @@ def reconstructPath(cameFrom, current):
     return path
 
 
-# ── A* search with weighted edges ─────────────────────────────────────────────
+# a star search
 
 def findPath(graph, start, goal):
-    # A* from start to goal using Manhattan distance as the heuristic.
-    # Returns the ordered list [start, ..., goal], or [] if unreachable.
-
-    # Open set entries: (fScore, node)
+    # find a path with a star
     openSet = []
     heapq.heappush(openSet, (manhattanDistance(start, goal), start))
 
@@ -61,20 +54,19 @@ def findPath(graph, start, goal):
     return []
 
 
-# ── Router state for the medical team ─────────────────────────────────────────
+# router state
 
 class RouterState:
     def __init__(self, graph):
         self.currentPos    = graph.primaryHospital
         self.civilians     = self._generateCivilians(graph)
-        self.currentPath   = []   # remaining cells on the way to the current civilian
-        self.currentTarget = 0    # index of the civilian we are heading to
-        self.skipped       = []   # civilians the team could not reach
-        self.reached       = []   # civilians the team has reached
+        self.currentPath   = []   # remaining cells
+        self.currentTarget = 0    # current civilian index
+        self.skipped       = []   # skipped civilians
+        self.reached       = []   # reached civilians
 
     def _generateCivilians(self, graph):
-        # Pick up to NUM_INITIAL_CIVILIANS accessible nodes that are not the
-        # primary hospital itself.
+        # pick nearby civilians
         candidates = []
         for node in graph.getAccessibleNodes():
             if node != graph.primaryHospital:
@@ -88,18 +80,15 @@ def initRouter(graph):
     return RouterState(graph)
 
 
-# ── Per-step routing logic ────────────────────────────────────────────────────
+# step routing
 
 def stepRouter(state, graph):
-    # Advance the medical team one cell toward the current civilian target.
-    # Returns an event description on notable events, None on a plain move.
-
     if state.currentTarget >= len(state.civilians):
         return "Medical team has reached all civilians."
 
     goal = state.civilians[state.currentTarget]
 
-    # Compute a path if we don't have one yet for this civilian
+    # build path if needed
     if not state.currentPath:
         path = findPath(graph, state.currentPos, goal)
 
@@ -109,16 +98,16 @@ def stepRouter(state, graph):
             state.currentPath    = []
             return f"Civilian at {goal} is unreachable -- all paths flooded. Skipping."
 
-        # Drop the start node; the team is already there
+        # drop the start cell
         state.currentPath = path[1:]
 
-    # Make sure the next cell is still reachable before we step into it
+    # check next cell
     nextCell    = state.currentPath[0]
     edgeBlocked = graph.isEdgeBlocked(state.currentPos, nextCell)
     nodeBlocked = not graph.nodes[nextCell]["accessible"]
 
     if edgeBlocked or nodeBlocked:
-        # The route went bad mid-journey -- recompute from the current position
+        # reroute from here
         newPath = findPath(graph, state.currentPos, goal)
 
         if not newPath:
@@ -130,7 +119,7 @@ def stepRouter(state, graph):
         state.currentPath = newPath[1:]
         return f"Medical team rerouted. New path length: {len(newPath)} hops."
 
-    # Move one step forward
+    # move one step
     state.currentPos = state.currentPath.pop(0)
 
     if state.currentPos == goal:

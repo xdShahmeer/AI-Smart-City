@@ -5,11 +5,11 @@ from PIL import Image, ImageTk
 from eventLog import EventLog
 
 
-# ── Asset configuration ──────────────────────────────────────────────────────
+# asset config
 
 ASSETS_DIR = "assets"
 
-# Maps each building type to its sprite filename (without extension).
+# building sprites
 BUILDING_SPRITES = {
     "Hospital":       "building1",
     "School":         "school",
@@ -19,36 +19,35 @@ BUILDING_SPRITES = {
     "AmbulanceDepot": "building2",
 }
 
-# Empty cells pick from this list deterministically per coordinate so the
-# layout looks varied but stable across renders.
+# ground sprites
 GROUND_VARIETY = ["grass", "wavy_grass", "flower_ground", "stoned_grass"]
 
-# Sprite for the ambulance icon (replaces the hand-drawn cross).
+# ambulance sprite
 AMBULANCE_SPRITE = "ambulance"
 
-# Animated tree strip: 2496x64 pixels = 39 frames of 64x64.
+# tree strip
 TREE_SPRITE_FILE  = "spr_tree_animated"
 TREE_FRAME_WIDTH  = 64
 TREE_FRAME_HEIGHT = 64
 
 
-# ── Layout constants ─────────────────────────────────────────────────────────
+# layout constants
 
-# Pixel gap between the cell edge and the filled building rectangle.
+# cell margin
 MARGIN = 4
 
-# Target canvas dimension in pixels -- cell size is derived from this.
+# canvas target
 CANVAS_TARGET = 600
 
-# Lower and upper bounds for a single cell's pixel size.
+# cell size range
 MIN_CELL_SIZE = 20
 MAX_CELL_SIZE = 50
 
-# Animation tick: how often the tree frame advances and the canvas redraws.
+# animation tick
 ANIMATION_INTERVAL_MS = 100
 
 
-# Tool descriptions surfaced under the Mouse Tool radio group.
+# tool text
 TOOL_DESCRIPTIONS = {
     "inspect":   "Click any cell to view its stats in Node Info.",
     "flood":     "Click two adjacent cells to flood the road between them.",
@@ -56,7 +55,7 @@ TOOL_DESCRIPTIONS = {
 }
 
 
-# ── Fonts ────────────────────────────────────────────────────────────────────
+# fonts
 
 FONT_TITLE  = ("Segoe UI Semibold", 10)
 FONT_BODY   = ("Segoe UI", 10)
@@ -69,7 +68,7 @@ FONT_LEGEND = ("Consolas", 9, "bold")
 FONT_MONO   = ("Consolas", 10)
 
 
-# ── Colours ──────────────────────────────────────────────────────────────────
+# colours
 
 COLOURS = {
     "bg":               "#13131e",
@@ -103,35 +102,29 @@ COLOURS = {
 }
 
 
-# ── Pure helpers ─────────────────────────────────────────────────────────────
+# helpers
 
 def isTreeCell(row, col):
-    # Deterministic check: roughly 1 in 7 cells become tree cells. The
-    # multipliers are chosen so the pattern looks scattered, not striped.
+    # tree cell check
     return ((row * 17) + (col * 31)) % 7 == 0
 
 
 def pickGroundIndex(row, col, numVariants):
-    # Pseudo-random but deterministic per coordinate.
+    # pick ground index
     if numVariants <= 0:
         return 0
     return ((row * 7) + (col * 13)) % numVariants
 
 
-# ── The main UI class ────────────────────────────────────────────────────────
+# main ui class
 
 class AppUI:
-    # Single-window Tk UI laid out in three columns:
-    #   left   = status bar + city grid Canvas
-    #   middle = settings, constraints, tools, overlays, node info
-    #   right  = legend + event log
-    # The UI talks only to the AppController -- it never touches the
-    # simulation or graph directly except for read-only rendering.
+    # single window ui in three columns
 
     def __init__(self, controller):
         self._controller = controller
 
-        # View state (UI-only, not part of the simulation)
+        # ui state
         self._overlayMode     = None
         self._selectedNode    = None
         self._autoPlaying     = False
@@ -139,14 +132,14 @@ class AppUI:
         self._coverageMaxDist = 0.0
         self._isRunning       = True
 
-        # Mouse tool: "inspect", "flood", or "emergency"
+        # mouse tool
         self._toolMode       = "inspect"
         self._floodFirstNode = None
 
-        # Cell size in pixels. Recomputed whenever grid size changes.
+        # cell size
         self._cellSize = self._computeCellSize(controller.getGraph().cols)
 
-        # Tk root and child widgets (created in setup)
+        # widgets
         self._tkRoot        = None
         self._canvas        = None
         self._eventLog      = None
@@ -156,7 +149,7 @@ class AppUI:
         self._toolDescLabel = None
         self._statusLabel   = None
 
-        # Tk variables for settings widgets
+        # setting vars
         self._gridSizeVar            = None
         self._floodProbVar           = None
         self._stepDelayVar           = None
@@ -165,20 +158,17 @@ class AppUI:
         self._powerplantHopsVar      = None
         self._industrialAdjacencyVar = None
 
-        # Sprite caches: the references must stay alive or Tk will garbage-
-        # collect the underlying images and the canvas will look empty.
-        self._buildingSprites = {}    # type name -> ImageTk.PhotoImage
-        self._groundSprites   = []    # list of ImageTk.PhotoImage
-        self._ambulanceSprite = None  # ImageTk.PhotoImage or None
-        self._treeFrames      = []    # list of ImageTk.PhotoImage (animation frames)
+        # sprite cache
+        self._buildingSprites = {}
+        self._groundSprites   = []
+        self._ambulanceSprite = None
+        self._treeFrames      = []
         self._treeFrameIndex  = 0
 
-    # ------------------------------------------------------------------ #
-    #  Public lifecycle                                                    #
-    # ------------------------------------------------------------------ #
+    # public lifecycle
 
     def setup(self):
-        # Build the Tk window and load sprites. Call once before run().
+        # build window and load sprites
         self._buildWindow()
         self._loadSprites()
         self._render()
@@ -186,19 +176,16 @@ class AppUI:
         self.addLog("CityMind started. Configure settings and press Generate City.")
 
     def run(self):
-        # Hand control to Tk's main loop.
         self._tkRoot.protocol("WM_DELETE_WINDOW", self._onClose)
         self._scheduleTick()
         self._tkRoot.mainloop()
 
     def addLog(self, text):
-        # Append a line to the event log. Used by the controller's listener.
+        # add log line
         if self._eventLog is not None:
             self._eventLog.addEntry(text)
 
-    # ------------------------------------------------------------------ #
-    #  Window construction                                                 #
-    # ------------------------------------------------------------------ #
+    # window build
 
     def _buildWindow(self):
         graph = self._controller.getGraph()
@@ -207,7 +194,7 @@ class AppUI:
         self._tkRoot.title("CityMind -- Urban Intelligence System")
         self._tkRoot.configure(bg=COLOURS["bg"])
 
-        # ---- Column 1: status bar above the city grid canvas ----
+        # column 1
         leftFrame = tk.Frame(self._tkRoot, bg=COLOURS["bg"])
         leftFrame.pack(side=tk.LEFT, fill=tk.Y, padx=8, pady=8)
 
@@ -227,7 +214,7 @@ class AppUI:
         self._canvas.pack(side=tk.TOP)
         self._canvas.bind("<Button-1>", self._onCanvasClick)
 
-        # ---- Column 2: control panels ----
+        # column 2
         controlFrame = tk.Frame(self._tkRoot, bg=COLOURS["bg"], width=320)
         controlFrame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8), pady=8)
         controlFrame.pack_propagate(False)
@@ -238,7 +225,7 @@ class AppUI:
         self._buildOverlayButtons(controlFrame)
         self._buildNodeInfoPanel(controlFrame)
 
-        # ---- Column 3: legend on top, event log fills the rest ----
+        # column 3
         rightFrame = tk.Frame(self._tkRoot, bg=COLOURS["bg"], width=320)
         rightFrame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 8), pady=8)
 
@@ -256,11 +243,11 @@ class AppUI:
         )
         frame.pack(side=tk.TOP, fill=tk.X, pady=(0, 8))
 
-        # Grid size
+        # grid size
         self._gridSizeVar = tk.StringVar(value=str(self._controller.getGraph().cols))
         self._labeledEntry(frame, "Grid Size:", self._gridSizeVar, row=0)
 
-        # Building counts
+        # building counts
         defaults = self._controller.getDefaultCounts()
         orderedTypes = ["Hospital", "School", "Industrial", "Residential",
                         "PowerPlant", "AmbulanceDepot"]
@@ -271,7 +258,7 @@ class AppUI:
             self._buildingVars[buildingType] = entryVar
             self._labeledEntry(frame, f"{buildingType}:", entryVar, row=index + 1)
 
-        # Flood probability slider
+        # flood probability
         self._floodProbVar = tk.DoubleVar(value=0.30)
         tk.Label(
             frame, text="Flood Probability:", fg=COLOURS["text"], bg=COLOURS["panel"],
@@ -285,7 +272,7 @@ class AppUI:
             length=170, sliderrelief=tk.FLAT, sliderlength=18
         ).grid(row=8, column=1, sticky="w", pady=3)
 
-        # Step delay slider
+        # step delay
         self._stepDelayVar = tk.DoubleVar(value=0.4)
         tk.Label(
             frame, text="Step Delay (s):", fg=COLOURS["text"], bg=COLOURS["panel"],
@@ -299,7 +286,7 @@ class AppUI:
             length=170, sliderrelief=tk.FLAT, sliderlength=18
         ).grid(row=9, column=1, sticky="w", pady=3)
 
-        # Control buttons -- two rows so they breathe
+        # control buttons
         buttonFrame = tk.Frame(frame, bg=COLOURS["panel"])
         buttonFrame.grid(row=10, column=0, columnspan=2, pady=(10, 2), sticky="ew")
 
@@ -414,7 +401,7 @@ class AppUI:
             ).pack(side=tk.LEFT)
 
     def _buildToolPanel(self, parent):
-        # Mouse-tool radio group with a one-line description that updates on change.
+        # mouse tool panel
         frame = tk.LabelFrame(
             parent, text=" Mouse Tool ", fg=COLOURS["text"], bg=COLOURS["panel"],
             font=FONT_TITLE, padx=10, pady=6,
@@ -456,8 +443,7 @@ class AppUI:
         row = tk.Frame(frame, bg=COLOURS["panel"])
         row.pack(side=tk.TOP, fill=tk.X)
 
-        # Three named methods, one per overlay -- avoids the closure-in-a-loop
-        # lambda pattern that is the classic Python beginner trap.
+        # one method per overlay
         roadsButton = self._makeOverlayButton(row, "Road Network", self._onRoadsOverlay)
         roadsButton.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
 
@@ -498,12 +484,10 @@ class AppUI:
         )
         self._nodeInfoText.pack(fill=tk.BOTH, expand=True)
 
-    # ------------------------------------------------------------------ #
-    #  Cell size + sprite loading                                          #
-    # ------------------------------------------------------------------ #
+    # cell size and sprite loading
 
     def _computeCellSize(self, gridSize):
-        # Pick a cell size so the grid roughly fits CANVAS_TARGET pixels.
+        # fit the grid to the target size
         if gridSize < 1:
             gridSize = 1
         size = CANVAS_TARGET // gridSize
@@ -514,8 +498,7 @@ class AppUI:
         return size
 
     def _loadSprites(self):
-        # Load every sprite at the current cell size. Called on setup and
-        # whenever the cell size changes (after Generate / Reset).
+        # load sprites for current size
         spriteSize = self._cellSize - MARGIN * 2
         if spriteSize < 8:
             spriteSize = 8
@@ -523,7 +506,7 @@ class AppUI:
         baseDir   = os.path.dirname(os.path.abspath(__file__))
         assetsDir = os.path.join(baseDir, ASSETS_DIR)
 
-        # Building sprites
+        # building sprites
         self._buildingSprites = {}
         for buildingType in BUILDING_SPRITES:
             tileName = BUILDING_SPRITES[buildingType]
@@ -531,14 +514,14 @@ class AppUI:
                 assetsDir, tileName, spriteSize
             )
 
-        # Ground variants
+        # ground sprites
         self._groundSprites = []
         for tileName in GROUND_VARIETY:
             sprite = self._loadSquareSprite(assetsDir, tileName, spriteSize)
             if sprite is not None:
                 self._groundSprites.append(sprite)
 
-        # Ambulance sprite (small icon overlaid on the cell centre)
+        # ambulance sprite
         ambulanceIconSize = self._cellSize // 2
         if ambulanceIconSize < 12:
             ambulanceIconSize = 12
@@ -546,13 +529,12 @@ class AppUI:
             assetsDir, AMBULANCE_SPRITE, ambulanceIconSize
         )
 
-        # Animated tree frames (slice the strip into 64x64 frames, then resize)
+        # tree frames
         self._treeFrames = self._loadTreeFrames(assetsDir, spriteSize)
         self._treeFrameIndex = 0
 
     def _loadSquareSprite(self, folder, tileName, size):
-        # Load a single PNG and resize it to (size, size). Returns None if the
-        # file cannot be read so the caller can fall back to a plain rectangle.
+        # load one sprite
         path = os.path.join(folder, f"{tileName}.png")
         try:
             raw    = Image.open(path).convert("RGBA")
@@ -562,9 +544,7 @@ class AppUI:
             return None
 
     def _loadTreeFrames(self, folder, size):
-        # Read the tree strip and slice it into individual frames. Each frame
-        # is then resized to the cell sprite size. Returns [] if the file
-        # cannot be loaded.
+        # load tree frames
         path = os.path.join(folder, f"{TREE_SPRITE_FILE}.png")
         try:
             strip = Image.open(path).convert("RGBA")
@@ -587,8 +567,7 @@ class AppUI:
         return frames
 
     def _resizeCanvasIfNeeded(self):
-        # Match the canvas to the controller's current graph dimensions and
-        # reload sprites if the cell size changed.
+        # resize canvas if needed
         graph        = self._controller.getGraph()
         newCellSize  = self._computeCellSize(max(graph.rows, graph.cols))
         sizeChanged  = newCellSize != self._cellSize
@@ -602,22 +581,18 @@ class AppUI:
         if sizeChanged:
             self._loadSprites()
 
-        # Force the root window to recompute its natural size so the side
-        # panels never get cropped by a fixed window geometry.
+        # refresh window size
         self._tkRoot.update_idletasks()
         self._tkRoot.geometry("")
 
-    # ------------------------------------------------------------------ #
-    #  Animation + auto-step scheduling                                    #
-    # ------------------------------------------------------------------ #
+    # animation and auto step
 
     def _scheduleTick(self):
-        # Single repeating tick that drives both the tree animation and the
-        # auto-step loop. Re-schedules itself every ANIMATION_INTERVAL_MS.
+        # repeat tick
         if not self._isRunning:
             return
 
-        # Auto-step the simulation if play is on
+        # auto step
         if self._autoPlaying:
             stepDelay = self._readStepDelay()
             events = self._controller.autoStepIfDue(stepDelay)
@@ -626,18 +601,16 @@ class AppUI:
             if self._controller.isFinished():
                 self._setAutoPlaying(False)
 
-        # Advance the tree animation frame
+        # advance tree frame
         if len(self._treeFrames) > 0:
             self._treeFrameIndex = (self._treeFrameIndex + 1) % len(self._treeFrames)
 
-        # Always re-render so the trees animate continuously
+        # redraw screen
         self._render()
 
         self._tkRoot.after(ANIMATION_INTERVAL_MS, self._scheduleTick)
 
-    # ------------------------------------------------------------------ #
-    #  Button callbacks                                                    #
-    # ------------------------------------------------------------------ #
+    # button callbacks
 
     def _onStartClicked(self):
         settings = self.getSimSettings()
@@ -697,10 +670,10 @@ class AppUI:
         self._render()
 
     def _refreshCoverage(self):
-        # Weighted Dijkstra distances from every node to its nearest ambulance.
+        # refresh coverage distances
         self._coverageDist = self._controller.getCoverageDistances()
 
-        # Pick the largest finite distance for the heatmap normaliser.
+        # find max distance
         maxDistance = 0.0
         for distance in self._coverageDist.values():
             if distance == float('inf'):
@@ -733,8 +706,7 @@ class AppUI:
         self._render()
 
     def _handleFloodClick(self, node):
-        # Two-click pattern: first click selects, second click on an adjacent
-        # cell floods the connecting road.
+        # two click flood
         if self._floodFirstNode is None:
             self._floodFirstNode = node
             self.addLog(f"Flood tool: selected {node}, click an adjacent cell to flood the road.")
@@ -776,13 +748,13 @@ class AppUI:
         self._render()
 
     def _showNodeInfo(self, info):
-        text = (
-            f"Node: {info['node']}\n"
-            f"Type: {info['type']}\n"
-            f"Population: {info['population']}\n"
-            f"Risk Index: {info['riskIndex']}\n"
-            f"Accessible: {info['accessible']}"
-        )
+        textLines = []
+        textLines.append(f"Node: {info['node']}")
+        textLines.append(f"Type: {info['type']}")
+        textLines.append(f"Population: {info['population']}")
+        textLines.append(f"Risk Index: {info['riskIndex']}")
+        textLines.append(f"Accessible: {info['accessible']}")
+        text = chr(10).join(textLines)
         self._nodeInfoText.config(state=tk.NORMAL)
         self._nodeInfoText.delete("1.0", tk.END)
         self._nodeInfoText.insert(tk.END, text)
@@ -792,12 +764,10 @@ class AppUI:
         self._isRunning = False
         self._tkRoot.destroy()
 
-    # ------------------------------------------------------------------ #
-    #  Status bar                                                          #
-    # ------------------------------------------------------------------ #
+    # status bar
 
     def _refreshStatus(self):
-        # Top-of-canvas status line summarising what the simulation is doing.
+        # refresh status line
         if self._statusLabel is None:
             return
 
@@ -836,9 +806,7 @@ class AppUI:
             )
         )
 
-    # ------------------------------------------------------------------ #
-    #  Rendering                                                           #
-    # ------------------------------------------------------------------ #
+    # rendering
 
     def _nodeCentre(self, node):
         nodeRow, nodeCol = node
@@ -894,8 +862,7 @@ class AppUI:
                 )
 
     def _drawCellSprite(self, node, data, cellX, cellY, cellWidth):
-        # Buildings: pick from BUILDING_SPRITES. Empty cells: pick a ground
-        # variant deterministically per coord (or a tree on tree cells).
+        # draw cell sprite
         if data["type"] == "Empty":
             self._drawEmptyCell(node, cellX, cellY, cellWidth)
             return
@@ -905,7 +872,7 @@ class AppUI:
             self._canvas.create_image(cellX, cellY, anchor=tk.NW, image=buildingSprite)
             return
 
-        # Fallback: solid colour rectangle when a sprite is missing
+        # fallback colour
         fallbackColour = COLOURS.get(data["type"], COLOURS["Empty"])
         self._canvas.create_rectangle(
             cellX, cellY,
@@ -916,7 +883,7 @@ class AppUI:
     def _drawEmptyCell(self, node, cellX, cellY, cellWidth):
         row, col = node
 
-        # First: lay down a ground tile for variety
+        # draw ground first
         if len(self._groundSprites) > 0:
             groundIndex = pickGroundIndex(row, col, len(self._groundSprites))
             groundSprite = self._groundSprites[groundIndex]
@@ -928,7 +895,7 @@ class AppUI:
                 fill=COLOURS["Empty"], outline=""
             )
 
-        # Then, on tree cells, layer the current animation frame on top
+        # layer trees on top
         treeAvailable = len(self._treeFrames) > 0
         bigEnough     = self._cellSize >= 24
         if treeAvailable and bigEnough and isTreeCell(row, col):
@@ -946,7 +913,7 @@ class AppUI:
         return COLOURS.get(data["type"], COLOURS["Empty"])
 
     def _crimeGradient(self, riskIndex):
-        # Map riskIndex in [1.0, 2.5] to a green -> yellow -> red gradient.
+        # crime colour scale
         if riskIndex < 1.0:
             risk = 1.0
         elif riskIndex > 2.5:
@@ -966,7 +933,7 @@ class AppUI:
         return f"#{redValue:02x}{greenValue:02x}00"
 
     def _coverageGradient(self, distance, maxDistance):
-        # Distance to nearest ambulance: green (close) -> yellow -> red (far).
+        # coverage colour scale
         if distance == float('inf'):
             return "#660000"
         if maxDistance <= 0:
@@ -997,8 +964,7 @@ class AppUI:
             if colour is None:
                 continue
 
-            # Non-built edges render thinner when the road overlay is on so
-            # the user can tell which edges belong to the MST + route network.
+            # thin non built roads
             if self._overlayMode == "roads" and not edgeData.get("built", True):
                 lineWidth = 1
             else:
@@ -1040,8 +1006,7 @@ class AppUI:
         )
 
     def _drawMedicalPath(self):
-        # Highlight the medical team's planned A* path so the user can see
-        # where it's heading on the next steps.
+        # draw planned path
         state = self._controller.getRouterState()
         if state is None or len(state.currentPath) == 0:
             return
@@ -1059,8 +1024,7 @@ class AppUI:
             )
 
     def _drawAmbulances(self):
-        # Use the ambulance.png sprite when available; fall back to a labelled
-        # square otherwise.
+        # draw ambulances
         graph = self._controller.getGraph()
 
         for position in graph.ambulancePositions:
@@ -1080,7 +1044,7 @@ class AppUI:
                 )
 
     def _drawAmbulanceFallback(self, centreX, centreY):
-        # Plain white square with a red cross when the sprite cannot load.
+        # fallback ambulance
         size = self._cellSize // 4
         if size < 8:
             size = 8
@@ -1101,8 +1065,7 @@ class AppUI:
         )
 
     def _drawPoliceOfficers(self):
-        # Small blue badge with "P" on each deployed officer's node. Drawn
-        # under the ambulance and medical team layers so those stay readable.
+        # draw police badges
         graph = self._controller.getGraph()
         if len(graph.policeOfficers) == 0:
             return
@@ -1114,8 +1077,7 @@ class AppUI:
         for node in graph.policeOfficers:
             centreX, centreY = self._nodeCentre(node)
 
-            # Offset to the top-right corner so the badge does not collide
-            # with the building's 3-letter label.
+            # move badge to corner
             badgeX = centreX + (self._cellSize // 2) - badgeRadius - 3
             badgeY = centreY - (self._cellSize // 2) + badgeRadius + 3
 
@@ -1135,7 +1097,7 @@ class AppUI:
                 )
 
     def _drawEmergencies(self):
-        # Pending civilians get a red ring with an "!" inside.
+        # draw emergency rings
         ringRadius = self._cellSize // 3
         if ringRadius < 10:
             ringRadius = 10
@@ -1168,7 +1130,7 @@ class AppUI:
         )
 
     def _drawMedicalTeam(self):
-        # Cyan square with bold "MED" so the team is unmistakable on the grid.
+        # draw medical team
         state = self._controller.getRouterState()
         if state is None or state.currentPos is None:
             return
@@ -1193,9 +1155,7 @@ class AppUI:
             fill="#003a33", font=("Consolas", labelFontSize, "bold")
         )
 
-    # ------------------------------------------------------------------ #
-    #  Getters                                                             #
-    # ------------------------------------------------------------------ #
+    # getters
 
     def getSimSettings(self):
         return {
