@@ -43,10 +43,9 @@ class EventLog:
 
     def addEntry(self, text):
         # write one line
-        buffer = StringIO()
-        print(text, file=buffer)
         self.textWidget.config(state=tk.NORMAL)
-        self.textWidget.insert(tk.END, text + "\n")
+        self.textWidget.insert(tk.END, text)
+        self.textWidget.insert(tk.END, chr(10))
         self.textWidget.config(state=tk.DISABLED)
         # stay at the bottom
         self.textWidget.see(tk.END)
